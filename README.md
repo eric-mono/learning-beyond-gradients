@@ -55,6 +55,7 @@ The repository includes the files needed by the article:
 - Breakout policy, trial logs, sample-efficiency figure, and checkpoint videos.
 - Ant policy, minimal extracted Ant policy, trial logs, sample-efficiency figure, MuJoCo XML, and final-policy video.
 - HalfCheetah sample-efficiency figure.
+- Montezuma exploratory policies, state/archive search scripts, trial logs, summaries, and probe images.
 - Atari57 aggregate and per-game figures, plus the CSV files used to summarize the aggregate/per-game comparisons.
 - The Atari57 batch prompt template used for the unattended Codex CLI runs.
 

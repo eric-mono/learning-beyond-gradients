@@ -1,0 +1,5 @@
+trial_index,timestamp,trial_name,depth,num_candidates,episodes_started,episodes_finished,env_steps,ale_frames,cumulative_env_steps,cumulative_ale_frames,score_max,best_score_so_far,new_states,frontier_size,visited_states,best_target_distance,best_sequence
+0,2026-04-02T15:45:48-07:00,state_graph_reset_v1_depth01,1,180,180,180,3672,3672,3672,3672,0.0,0.0,13,13,13,72,"[['LEFT', 32]]"
+1,2026-04-02T15:46:05-07:00,state_graph_reset_v1_depth02,2,2340,2340,2340,117079,117079,120751,120751,0.0,0.0,128,128,141,42,"[['LEFT', 32], ['LEFTFIRE', 32]]"
+2,2026-04-02T15:49:29-07:00,state_graph_reset_v1_depth03,3,23040,23040,23040,1420657,1420657,1541408,1541408,0.0,0.0,128,128,269,31,"[['LEFT', 32], ['LEFTFIRE', 32], ['LEFT', 12]]"
+3,2026-04-02T15:54:30-07:00,state_graph_reset_v1_depth04,4,23040,23040,23040,1987555,1987555,3528963,3528963,0.0,0.0,128,128,397,31,"[['LEFT', 32], ['LEFTFIRE', 32], ['LEFT', 12], ['NOOP', 1]]"
