@@ -1,0 +1,432 @@
+[
+  {
+    "action": 0,
+    "name": "NOOP",
+    "duration": 20
+  },
+  {
+    "action": 4,
+    "name": "LEFT",
+    "duration": 8
+  },
+  {
+    "action": 12,
+    "name": "LEFTFIRE",
+    "duration": 12
+  },
+  {
+    "action": 4,
+    "name": "LEFT",
+    "duration": 12
+  },
+  {
+    "action": 3,
+    "name": "RIGHT",
+    "duration": 8
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 16
+  },
+  {
+    "action": 11,
+    "name": "RIGHTFIRE",
+    "duration": 32
+  },
+  {
+    "action": 16,
+    "name": "DOWNRIGHTFIRE",
+    "duration": 6
+  },
+  {
+    "action": 14,
+    "name": "UPRIGHTFIRE",
+    "duration": 12
+  },
+  {
+    "action": 11,
+    "name": "RIGHTFIRE",
+    "duration": 12
+  },
+  {
+    "action": 12,
+    "name": "LEFTFIRE",
+    "duration": 8
+  },
+  {
+    "action": 1,
+    "name": "FIRE",
+    "duration": 18
+  },
+  {
+    "action": 11,
+    "name": "RIGHTFIRE",
+    "duration": 10
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 4
+  },
+  {
+    "action": 12,
+    "name": "LEFTFIRE",
+    "duration": 6
+  },
+  {
+    "action": 5,
+    "name": "DOWN",
+    "duration": 16
+  },
+  {
+    "action": 11,
+    "name": "RIGHTFIRE",
+    "duration": 24
+  },
+  {
+    "action": 5,
+    "name": "DOWN",
+    "duration": 10
+  },
+  {
+    "action": 1,
+    "name": "FIRE",
+    "duration": 40
+  },
+  {
+    "action": 17,
+    "name": "DOWNLEFTFIRE",
+    "duration": 40
+  },
+  {
+    "action": 1,
+    "name": "FIRE",
+    "duration": 16
+  },
+  {
+    "action": 5,
+    "name": "DOWN",
+    "duration": 12
+  },
+  {
+    "action": 1,
+    "name": "FIRE",
+    "duration": 16
+  },
+  {
+    "action": 16,
+    "name": "DOWNRIGHTFIRE",
+    "duration": 10
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 6
+  },
+  {
+    "action": 16,
+    "name": "DOWNRIGHTFIRE",
+    "duration": 16
+  },
+  {
+    "action": 5,
+    "name": "DOWN",
+    "duration": 12
+  },
+  {
+    "action": 12,
+    "name": "LEFTFIRE",
+    "duration": 4
+  },
+  {
+    "action": 5,
+    "name": "DOWN",
+    "duration": 10
+  },
+  {
+    "action": 9,
+    "name": "DOWNLEFT",
+    "duration": 8
+  },
+  {
+    "action": 6,
+    "name": "UPRIGHT",
+    "duration": 14
+  },
+  {
+    "action": 0,
+    "name": "NOOP",
+    "duration": 56
+  },
+  {
+    "action": 3,
+    "name": "RIGHT",
+    "duration": 16
+  },
+  {
+    "action": 6,
+    "name": "UPRIGHT",
+    "duration": 12
+  },
+  {
+    "action": 7,
+    "name": "UPLEFT",
+    "duration": 24
+  },
+  {
+    "action": 8,
+    "name": "DOWNRIGHT",
+    "duration": 20
+  },
+  {
+    "action": 0,
+    "name": "NOOP",
+    "duration": 40
+  },
+  {
+    "action": 7,
+    "name": "UPLEFT",
+    "duration": 8
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 12
+  },
+  {
+    "action": 11,
+    "name": "RIGHTFIRE",
+    "duration": 12
+  },
+  {
+    "action": 12,
+    "name": "LEFTFIRE",
+    "duration": 10
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 8
+  },
+  {
+    "action": 14,
+    "name": "UPRIGHTFIRE",
+    "duration": 16
+  },
+  {
+    "action": 5,
+    "name": "DOWN",
+    "duration": 32
+  },
+  {
+    "action": 1,
+    "name": "FIRE",
+    "duration": 4
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 30
+  },
+  {
+    "action": 5,
+    "name": "DOWN",
+    "duration": 32
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 32
+  },
+  {
+    "action": 2,
+    "name": "UP",
+    "duration": 20
+  },
+  {
+    "action": 8,
+    "name": "DOWNRIGHT",
+    "duration": 24
+  },
+  {
+    "action": 7,
+    "name": "UPLEFT",
+    "duration": 8
+  },
+  {
+    "action": 9,
+    "name": "DOWNLEFT",
+    "duration": 6
+  },
+  {
+    "action": 2,
+    "name": "UP",
+    "duration": 12
+  },
+  {
+    "action": 17,
+    "name": "DOWNLEFTFIRE",
+    "duration": 48
+  },
+  {
+    "action": 2,
+    "name": "UP",
+    "duration": 40
+  },
+  {
+    "action": 1,
+    "name": "FIRE",
+    "duration": 48
+  },
+  {
+    "action": 17,
+    "name": "DOWNLEFTFIRE",
+    "duration": 20
+  },
+  {
+    "action": 16,
+    "name": "DOWNRIGHTFIRE",
+    "duration": 16
+  },
+  {
+    "action": 7,
+    "name": "UPLEFT",
+    "duration": 9
+  },
+  {
+    "action": 12,
+    "name": "LEFTFIRE",
+    "duration": 56
+  },
+  {
+    "action": 4,
+    "name": "LEFT",
+    "duration": 12
+  },
+  {
+    "action": 2,
+    "name": "UP",
+    "duration": 16
+  },
+  {
+    "action": 11,
+    "name": "RIGHTFIRE",
+    "duration": 6
+  },
+  {
+    "action": 2,
+    "name": "UP",
+    "duration": 56
+  },
+  {
+    "action": 14,
+    "name": "UPRIGHTFIRE",
+    "duration": 27
+  },
+  {
+    "action": 17,
+    "name": "DOWNLEFTFIRE",
+    "duration": 40
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 48
+  },
+  {
+    "action": 14,
+    "name": "UPRIGHTFIRE",
+    "duration": 19
+  },
+  {
+    "action": 16,
+    "name": "DOWNRIGHTFIRE",
+    "duration": 11
+  },
+  {
+    "action": 14,
+    "name": "UPRIGHTFIRE",
+    "duration": 8
+  },
+  {
+    "action": 5,
+    "name": "DOWN",
+    "duration": 15
+  },
+  {
+    "action": 17,
+    "name": "DOWNLEFTFIRE",
+    "duration": 15
+  },
+  {
+    "action": 2,
+    "name": "UP",
+    "duration": 31
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 14
+  },
+  {
+    "action": 12,
+    "name": "LEFTFIRE",
+    "duration": 47
+  },
+  {
+    "action": 16,
+    "name": "DOWNRIGHTFIRE",
+    "duration": 56
+  },
+  {
+    "action": 9,
+    "name": "DOWNLEFT",
+    "duration": 9
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 5
+  },
+  {
+    "action": 1,
+    "name": "FIRE",
+    "duration": 31
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 24
+  },
+  {
+    "action": 12,
+    "name": "LEFTFIRE",
+    "duration": 20
+  },
+  {
+    "action": 6,
+    "name": "UPRIGHT",
+    "duration": 10
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 48
+  },
+  {
+    "action": 8,
+    "name": "DOWNRIGHT",
+    "duration": 4
+  },
+  {
+    "action": 15,
+    "name": "UPLEFTFIRE",
+    "duration": 56
+  },
+  {
+    "action": 16,
+    "name": "DOWNRIGHTFIRE",
+    "duration": 56
+  }
+]

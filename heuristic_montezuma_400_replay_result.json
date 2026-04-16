@@ -1,0 +1,13 @@
+{
+  "env_id": "MontezumaRevenge-v5",
+  "seed": 10001,
+  "score": 400.0,
+  "env_steps": 1769,
+  "done": true,
+  "macro_count": 86,
+  "scripted_action_steps": 1793,
+  "expected_score": 400.0,
+  "expected_steps": 1769,
+  "record_mp4": null,
+  "frame0_png": null
+}

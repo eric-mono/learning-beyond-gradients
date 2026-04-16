@@ -55,13 +55,41 @@ The repository includes the files needed by the article:
 - Breakout policy, trial logs, sample-efficiency figure, and checkpoint videos.
 - Ant policy, minimal extracted Ant policy, trial logs, sample-efficiency figure, MuJoCo XML, and final-policy video.
 - HalfCheetah policy script, iteration log, and sample-efficiency figure.
-- Montezuma exploratory policies, state/archive search scripts, trial logs, summaries, and probe images.
+- Montezuma exploratory policies, state/archive search scripts, trial logs, summaries, probe images, plus the recovered Atari57 400-point native-image policy and replay video.
 - Atari57 aggregate and per-game figures, plus the CSV files used to summarize the aggregate/per-game comparisons.
 - The Atari57 batch prompt template used for the unattended Codex CLI runs.
 
 The reproduction commands for individual Breakout and Ant checkpoints are embedded in collapsible sections inside the article. Those commands assume they are run from the repository root.
 
 HalfCheetah's longer iteration history and checked policy commands are in `heuristic_halfcheetah_v5_log.md`; the corresponding script is `heuristic_halfcheetah_v5.py`.
+
+## Montezuma 400-Point Replay
+
+The Atari57 batch found one `MontezumaRevenge-v5` native-image run that reached `400.0` points. The original short-lived `/tmp` video directory is no longer required; the route was recovered from the compressed Atari57 summary rows and packaged here as a standalone open-loop replay:
+
+```bash
+python3 heuristic_montezuma_400_policy.py \
+  --metadata-out heuristic_montezuma_400_replay_result.json
+```
+
+Expected result:
+
+```text
+score = 400.0
+env_steps = 1769
+seed = 10001
+```
+
+To regenerate the video:
+
+```bash
+python3 heuristic_montezuma_400_policy.py \
+  --record-mp4 montezuma_400_render_seed10001.mp4 \
+  --frame0-png montezuma_400_render_seed10001_frame0.png \
+  --metadata-out montezuma_400_render_seed10001_meta.json
+```
+
+Source thread: `019d4cc1-9e30-78d0-b304-43b07c2aebe0`. The specific repaired best trial is `repair_replay_r1_t19734`, from `MontezumaRevenge-v5__native_obs__repeat1`.
 
 ## Runtime Notes
 

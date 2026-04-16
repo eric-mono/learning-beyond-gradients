@@ -1,0 +1,23 @@
+{
+  "env_id": "MontezumaRevenge-v5",
+  "obs_mode": "native_obs",
+  "thread_id": "019d4cc1-9e30-78d0-b304-43b07c2aebe0",
+  "session_rollout": "/Users/jiayi/.codex/sessions/2026/04/01/rollout-2026-04-01T22-54-10-019d4cc1-9e30-78d0-b304-43b07c2aebe0.jsonl",
+  "batch_task_id": "MontezumaRevenge-v5__native_obs__repeat1",
+  "source_pod": "dev260323-train-w0-0",
+  "source_run_dir": "/tmp/envpool_heuristic/MontezumaRevenge-v5/native_obs/run_20260406_055440_334982",
+  "source_summary_rows": "/Users/jiayi/code/envpool_heuristics/atari57_raw_extracts/train_summary_rows.csv.gz",
+  "best_trial": "repair_replay_r1_t19734",
+  "score": 400.0,
+  "env_steps": 1769,
+  "replay_seed_used_for_video": 10001,
+  "macro_count": 86,
+  "cumulative_env_steps_at_trial": 7691611,
+  "cumulative_episodes_at_trial": 964,
+  "known_best_score_from_prompt": 19093.74,
+  "notes": "Replay of the shortest known real 400-point trial to repair best_macros and reward trace after the earlier simplify bug.",
+  "lost_original_video_paths": [
+    "/tmp/envpool_heuristic/MontezumaRevenge-v5/final_videos/montezuma_400_render_seed10001.mp4",
+    "/tmp/envpool_heuristic/MontezumaRevenge-v5/final_videos/montezuma_400_render_seed10001_frame0.png"
+  ]
+}
