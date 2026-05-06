@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -119,7 +119,424 @@ th { background: #f1f5f9; }
 </head>
 <body>
   <main class="page">
-    <article class="lang-pane" lang="zh-CN">
+    <div class="lang-switch-wrap" aria-label="Language switcher">
+      <div class="lang-switch">
+        <button type="button" id="lang-en" class="active" aria-pressed="true">English</button>
+        <button type="button" id="lang-zh" aria-pressed="false">中文</button>
+      </div>
+    </div>
+    <article id="article-en" class="lang-pane" lang="en">
+<h1>Heuristic System: Software Evolves Through Metabolism</h1>
+<blockquote>
+<p>Jiayi Weng</p>
+</blockquote>
+<p>We used to think heuristics lost to neural networks because rules were not smart enough. After these experiments, I suspect something else: in many cases, they lost because they were too expensive to maintain.</p>
+<p>I first ran into this while validating <a href="https://github.com/sail-sg/envpool">EnvPool</a> environments. Random policies were too weak. In many environments, an entire episode never reaches the states where meaningful rewards appear. When a run fails, all you see is a timeout or a score of 0, and it is hard to tell whether the environment is wrong, the wrapper is wrong, or the policy simply never reached an informative state. Training a neural network for every environment would be too heavy as well: training scripts, dependencies, versions, and checkpoints would become a burden inside the test system itself.</p>
+<p>So the question became:</p>
+<pre><code class="language-text">Can we write cheap, reproducible heuristics that are much stronger than random,
+and use them to drive environments into informative states?
+</code></pre>
+<p>At first I asked Codex directly: "write a policy that solves Breakout." That did not work well. A low score was not very informative: Codex could not tell whether the action semantics were wrong, the state detector was wrong, the evaluation setup was wrong, or the policy structure itself was bad. Later I changed the task into a different shape: do not just hand me a <code>policy.py</code>; maintain the whole loop.</p>
+<p>The loop looked roughly like this:</p>
+<pre><code class="language-text">probe actions and observations
+-&gt; write state detectors
+-&gt; write the policy
+-&gt; run full episodes
+-&gt; record trials.jsonl and summary.csv
+-&gt; generate videos or curves
+-&gt; inspect failure modes
+-&gt; edit the policy
+-&gt; simplify code and add regressions
+</code></pre>
+<p>At the time, I did not have a name for this. I only felt that the task had changed shape. The final artifact was no longer a policy file; it was an experimental system that could keep being changed. It had probes, records, replays, failure modes, and clues for the next round.</p>
+<h2>1. Breakout: The Origin Story</h2>
+<p>Breakout first looks like a geometry problem: where is the ball, where is the paddle, and where will the ball land after bouncing off the walls? The real trouble comes later. A policy can keep catching the ball indefinitely and still stop making progress because it has fallen into a stable loop.</p>
+<p>Codex did not rush to write the final policy. It first checked the action space and observation shape, then found the paddle, ball, and brick colors in RGB frames, and then used those image labels to scan the 128 RAM bytes. The early experiment ledger looked roughly like this:</p>
+<pre><code class="language-text">trial_name                 score   cumulative_env_steps   note
+shape_action_probe          -      32                     inspect obs/info/action
+ram_byte_corr_probe_v1      -      5,032                  correlate RAM bytes
+ram_fit_action_probe_v2     -      9,532                  action 2=right, 3=left
+baseline_v0                99      16,303                 initial RAM intercept
+tunnel0_v1                387      43,303                 no tunnel offset
+</code></pre>
+<p><code>387</code> was the first local high score that could easily fool you. The policy could catch the ball reliably, but it was feeding the ball into a cycle: it would not die, and it would not keep clearing bricks. If a human were writing this heuristic by hand, it would be tempting to keep tuning "catch accuracy." Codex looked at the video and the last few dozen trajectory steps and noticed that the real problem was the lack of disturbance in the ball path.</p>
+<video controls src="heuristic_breakout_score387_tunnel0_render210x160.mp4" width="360"></video>
+
+<p>The first key mechanism was to break the loop: if no reward had appeared for a long time, add a periodic offset to the predicted landing point and knock the ball out of the local cycle. This pushed the score from <code>387</code> to <code>507</code>.</p>
+<pre><code class="language-python">if steps_since_reward &gt;= stuck_trigger_steps:
+    phase = stuck_offset_index % 4
+    if phase == 0:
+        offset = +stuck_offset_px
+    elif phase == 1:
+        offset = -stuck_offset_px
+    elif phase == 2:
+        offset = +0.5 * stuck_offset_px
+    else:
+        offset = -0.5 * stuck_offset_px
+else:
+    offset = 0.0
+</code></pre>
+<p>Then another failure mode appeared. For fast, low balls, the normal intercept logic made the paddle overreact to lookahead and drift away. Codex added <code>fast_low_ball_lead_steps=3</code>, and the score jumped from <code>507</code> to <code>839</code>.</p>
+<pre><code class="language-python">if vy &gt; 0.1 and ball_y &lt;= paddle_y:
+    steps_to_paddle = max((paddle_y - ball_y) / vy, 0.0)
+    intercept_x = reflect_position(ball_x + vx * steps_to_paddle)
+    target_x = intercept_x + stuck_offset
+elif vy &gt;= fast_ball_min_vy:
+    target_x = ball_x + fast_low_ball_lead_steps * vx
+else:
+    target_x = ball_x + chase_lead_steps * vx
+</code></pre>
+<p>The move from <code>839</code> to <code>864</code> felt most like maintaining a system that had already become complicated. Codex tried deadbands, serve offsets, stuck offsets, brick-balance bias, and lookahead steps. Many directions did not help. The useful change was a late-game condition: after the first wall had been cleared, the stuck offset should apply only while the ball was still far from the paddle; when the ball got close, the offset should decay away, otherwise the final few bricks would pull the paddle off course. It also added a tiny paddle-drift compensation for the one-step delay between action and paddle position.</p>
+<pre><code class="language-python">if score &gt;= 432 and stuck_release_horizon_steps &gt; 0:
+    release_ratio = clip(steps_to_paddle / stuck_release_horizon_steps, 0.0, 1.0)
+    offset *= release_ratio
+
+if score &gt;= 432 and ball_y &gt;= 170 and last_action == RIGHT:
+    control_paddle_x = paddle_x + 2.0
+elif score &gt;= 432 and ball_y &gt;= 170 and last_action == LEFT:
+    control_paddle_x = paddle_x - 2.0
+</code></pre>
+<video controls src="heuristic_breakout_ci3985ae2_score864_render210x160.mp4" width="360"></video>
+
+<p>The final RAM default configuration verified as <code>864 / 864 / 864</code> across three episodes. After that, Codex migrated the same geometric control back to pure image input: no RAM, only RGB segmentation for the paddle, ball, and brick balance. The pure-image version first reached <code>310</code>, then <code>428</code>, and finally <code>864</code> after lowering the late-game "decay the stuck offset" threshold so that it applied throughout the run. It first hit <code>864</code> after 7 policy-local episodes, corresponding to <code>14,504</code> policy-local environment steps in the figure.</p>
+<p><img alt="Breakout sample efficiency" src="heuristic_breakout_sample_efficiency.png"></p>
+<p>This should not be described as "pure image reached the maximum score from scratch in 14.5K steps." The real story is that Codex first found geometric control, loop breaking, and late-stage offset decay in the RAM version. Once that structure stabilized, it swapped the state-reading layer from RAM to RGB detection. The pure-image <code>14.5K</code> is a transfer budget.</p>
+<p>The signal here is not just the score. Once a heuristic policy is written as maintainable software, the input layer can be replaced, the control logic can be reused, and regression tests can keep running. It starts to feel like a small organ: the input layer can change, the control logic can stay, and failure modes can keep being absorbed.</p>
+<p>The full policy is in <a href="heuristic_breakout.py"><code>heuristic_breakout.py</code></a>, and the experiment ledger is in <a href="heuristic_breakout_trials_summary.csv"><code>heuristic_breakout_trials_summary.csv</code></a>.</p>
+<h2>2. Giving It a Name</h2>
+<p>After Breakout, I realized Codex was no longer maintaining a heuristic program. It was maintaining a <strong>heuristic system</strong>.</p>
+<p>By itself, "if the ball is on the left, move the paddle left" is a heuristic. What turns it into a system is the machinery around it: how to detect the ball and paddle, how to confirm action semantics, how to notice that the ball path is stuck, how to reproduce a <code>387</code> or <code>864</code> score, how to record why a change worked, and where the next iteration should pick up.</p>
+<p>The line is not about how many rules there are. It is about whether feedback can change the next run. If a system only executes fixed rules, it is a heuristic program. If historical results can rewrite its state representation, action logic, evaluation method, or memory, then it is the kind of heuristic system I mean here.</p>
+<p>This is what I mean when I say software starts to have metabolism. I do not mean anything mystical, and I do not mean software has suddenly become alive. I mean a very plain engineering fact: feedback no longer has to stop at human postmortems. An agent can digest it into changes in code, configuration, tests, and memory.</p>
+<p>The relationship I want to express is simple:</p>
+<p><img alt="Air, food, and feedback: three metabolic inputs" src="ig_0c2dd0d2f07176560169faa8a1edd081968d1579bca5cba35f.png"></p>
+<p>Air inflates a tire. Food lets a child grow. A coding agent connects feedback into software's update path, so the software can slowly grow new structure.</p>
+<p>In a lightweight form, the loop is:</p>
+<pre><code class="language-text">observation -&gt; state representation -&gt; program policy -&gt; action -&gt; feedback -&gt; memory -&gt; update
+</code></pre>
+<p>A failing test can become a regression test. A log anomaly can become a new state detector. An experiment result can become a policy version. Human experience can become memory and the next patch. As long as these updates persist and affect the next run, the system is not merely executing rules. It is absorbing feedback.</p>
+<p>Hold on to this intuition: the agent is tending a software system that grows more complex, keeps history, and remains editable. This will lead to another question later: there is an upper bound to the complexity an agent can maintain, and that bound depends on feedback, tests, modularity, and tool quality.</p>
+<h2>3. Ant and HalfCheetah: Complexity Can Also Be Maintained</h2>
+<p>Ant surprised me even more. Breakout still has fairly intuitive geometry. Ant is continuous control: 8 joint actions, and the failure modes are no longer just "the ball was missed."</p>
+<p>I did not start by saying "use CPG" or "use MPC." The request was only: do not train a neural network, make it reproducible locally, leave a record for every experiment, and keep improving the score. Codex first read the EnvPool/Gymnasium Ant observations and rewards, confirmed the action order, root velocity, torso orientation, joint positions, and joint velocities, and then proposed its first rhythmic gait.</p>
+<p>The first version was a four-leg phase oscillator: left and right legs in opposite phase, hip and ankle joints tracking sinusoidal target angles, with actions produced by a PD controller. It was not elegant, but it was already much stronger than random: across 5 random seeds, the mean score was <code>2291</code>.</p>
+<pre><code class="language-python">leg_phase = warp_phase(phase + LEG_PHASE, stance_duty(vx))
+stance = leg_phase &lt; pi
+
+hip_wave = HIP_BIAS + stance_or_swing_scale * (
+    HIP_AMP * sin(leg_phase)
+    + HIP_H2_AMP * sin(2 * leg_phase + HIP_H2_PHASE)
+    + HIP_H3_AMP * sin(3 * leg_phase + HIP_H3_PHASE)
+)
+
+action[0::2] = KP * (
+    HIP_SIGN * hip_wave
+    + HEADING_AXIS * (YAW_GAIN * yaw + YAW_RATE_GAIN * yaw_rate)
+    - q[0::2]
+)
+action[1::2] = KP * (ANKLE_SIGN * (ankle_wave + balance) - q[1::2])
+</code></pre>
+<p>The early iterations felt like tuning a real controller: add yaw feedback to reach <code>2718</code>, tune phase speed, hip and ankle amplitudes, and yaw-rate gain to reach <code>3025</code>, then add second- and third-order harmonics to reach <code>3162</code>. Codex also tried broad parameter search, but it did not consistently beat the current rhythmic policy, so it stopped expanding the search budget and moved to another representation.</p>
+<p>The jump came from residual model predictive planning, or MPC in the code. Roughly speaking, MPC is "walking while thinking a short distance ahead": keep the rhythmic gait as a base reflex; at every real environment step, sample dozens of small residual action sequences inside a local MuJoCo model; score them; execute only the first residual action; then observe the next state and plan again. The unfinished tail of the previous plan becomes a warm start.</p>
+<p>This way, the policy does not have to plan all 8 joints from scratch at every step. It starts from a stable gait and uses short-horizon model planning to correct it.</p>
+<pre><code class="language-python">base = cpg_action(phase, q, dq, roll, pitch, yaw, rates, contacts, vx)
+
+best_plan = previous_plan.copy()
+best_obj = rollout_objective(obs, best_plan)
+for _ in range(CANDIDATES - 1):
+    residuals = clip(
+        best_plan + rng.normal(0.0, MPC_SIGMA, size=(HORIZON, 8)),
+        -MPC_CLIP,
+        MPC_CLIP,
+    )
+    residuals[1:] = 0.6 * residuals[1:] + 0.4 * residuals[:-1]
+    obj = rollout_objective(obs, residuals)
+    if obj &gt; best_obj:
+        best_obj = obj
+        best_plan = residuals
+
+plan[:-1] = PLAN_DECAY * best_plan[1:]
+return clip(base + best_plan[0], -1.0, 1.0)
+</code></pre>
+<p>I did not plant these structures as strong priors. After the rhythmic policy reached <code>3162</code>, Codex wrote a model-based residual planner on its own. The first version, with horizon 6, 32 candidates, and small residuals, moved the score from <code>3135</code> to <code>3635</code>. Then it kept extending the controller:</p>
+<pre><code class="language-text">trial_name                               score_mean   cumulative_env_steps   note
+ant_lr_cpgpd_v1                         2291.9       5,000                  left-right antiphase CPG + PD
+ant_yawaxis_grid_v2                     2857.9       20,000                 yaw feedback + retuned params
+ant_h3_428_v1                           3162.0       50,000                 second/third harmonics
+ant_mpc_residual_v1_ep1                 3635.5       62,000                 horizon=6, candidates=32
+ant_mpc_residual_cfg4_eval5             3964.7       67,000                 horizon=8, candidates=48
+ant_mpc_residual_cand07_eval5           4647.1       73,000                 local search around MPC config
+ant_mpc_residual_narrow04_eval5         4871.3       79,000                 lower z target, larger kp/candidates
+ant_mpc_residual_warm02_eval5           5165.2       85,000                 warm-start residual plan
+ant_mpc_fast065x060_sigma008_clip012    5759.4       95,000                 faster gait + larger residuals
+ant_mpc_term001_ep1                     6054.5       100,000                terminal velocity cost
+ant_mpc_default_adaptive_ep1            6146.2       106,300                adaptive phase speed + stance duty
+</code></pre>
+<p><img alt="Ant sample efficiency" src="heuristic_ant_sample_efficiency.png"></p>
+<video controls src="heuristic_ant_mpc_default_6146_render480.mp4" width="480"></video>
+
+<p>The full experiment script is in <a href="heuristic_ant.py"><code>heuristic_ant.py</code></a>, the extracted minimal policy is in <a href="heuristic_ant_min_policy.py"><code>heuristic_ant_min_policy.py</code></a>, and the experiment ledger is in <a href="heuristic_ant_trials_summary.csv"><code>heuristic_ant_trials_summary.csv</code></a>.</p>
+<p>Ant gives a different signal from Breakout. Breakout shows that once the geometry is found, regularized input can produce extreme sample efficiency. Ant shows that a heuristic system can grow more complex while staying inspectable, reproducible, and editable. By the end, the policy had oscillator phase, stance ratio, speed adaptation, roll/pitch/yaw feedback, foot contacts, short-horizon model rollouts, residual smoothing, terminal velocity cost, and warm-start plan decay. A human could certainly write one or two of those modules. Maintaining the experiment ledger, code, videos, and failed directions together in a short time is a very different level of difficulty.</p>
+<p>HalfCheetah is another point in the same direction. I reran 5 episodes of <code>mpc-staged-tree-asym-pd-cpg</code>; seeds <code>100..104</code> produced mean <code>11836.7</code>, min <code>11735.0</code>, and max <code>12041.2</code>. The policy uses interpretable gait and posture rules plus online staged-tree MPC: first form a high-scoring gait with CPG/PD, then use short-horizon model scoring and a staged swing-amplitude schedule to correct actions. The script is <a href="heuristic_halfcheetah_v5.py"><code>heuristic_halfcheetah_v5.py</code></a>, and the iteration log is <a href="heuristic_halfcheetah_v5_log.md"><code>heuristic_halfcheetah_v5_log.md</code></a>.</p>
+<p>This is not an argument that continuous control should go back to handwritten rules. The point is narrower: once an agent is willing to maintain it over time, a complex program policy does not immediately have to collapse into a mess. It can be modularized, recorded, regression-tested, and kept alive.</p>
+<h2>4. Atari57: Not a One-Off</h2>
+<p>Breakout and Ant are both single-task stories. Atari57 is a scale test: take the same Codex workflow, run it on the full Atari57 suite, use both <code>ram</code> and <code>native_obs</code> for each environment, and run 3 independent repeats for each input mode. In total:</p>
+<pre><code class="language-text">57 games x 2 input modes x 3 runs = 342 coding-agent search trajectories
+</code></pre>
+<p>There was no human giving hints in this experiment. I batch-launched <code>gpt-5.4 xhigh</code> agents through the Codex CLI. Each agent got the same template with a different <code>ENV_ID / OBS_MODE / REPEAT_INDEX</code>, then ran until it stopped. Each run had to write <code>policy.py</code>, <code>trials.jsonl</code>, <code>summary.csv</code>, <code>sample_efficiency.png</code>, and <code>README.md</code>.</p>
+<p>The full prompt is in <a href="atari57_prompt_template.txt"><code>atari57_prompt_template.txt</code></a>. The main constraints were:</p>
+<pre><code class="language-text">Goal: for one EnvPool Atari environment under the given OBS_MODE,
+design and iterate a handwritten heuristic policy by yourself.
+
+Hard constraints:
+- Do not train neural networks.
+- Do not read environment source, tests, ROM details, or hidden state.
+- In native_obs mode, use only the obs returned by reset/step.
+- In ram mode, info[&quot;ram&quot;] is allowed.
+- Atari initialization parameters are fixed, including frame_skip=1,
+  reward_clip=False, and sticky action=0.
+- Every probe/debug/trial step through the real environment must count
+  toward cumulative_env_steps.
+
+Outputs:
+- policy.py: the current best heuristic, simplified as much as possible.
+- trials.jsonl: score, environment steps, config, and notes for every trial.
+- summary.csv: summary generated from trials.
+- sample_efficiency.png: score curve by environment step and episode.
+- README.md: best score, reproduction command, failed directions, stop reason.
+</code></pre>
+<p>In the figure below, the x-axis starts at <code>10^4</code> environment steps because the earlier region is almost flat. The y-axis is Atari human-normalized score, or HNS. The Codex curves use the common Atari median convention: for each game, take the median over 3 independent runs, then take the median across 57 games. This statistic is not dominated by a few very high-scoring games. It mainly measures coverage.</p>
+<p><img alt="Atari57 sample efficiency compared with OpenRL Benchmark" src="atari57_openrl_sample_efficiency_context.png"></p>
+<p>In the fully unattended batch run, <code>native_obs</code> reached <code>0.81</code> around <code>9.7M</code> steps, and <code>ram</code> reached <code>0.59</code>. In the same figure, the PPO2 / CleanRL EnvPool PPO median HNS curves saved by <a href="https://arxiv.org/abs/2402.03046">OpenRL Benchmark</a> are roughly <code>0.88 / 0.92</code> at <code>10M</code> steps.</p>
+<p>This compares environment interaction efficiency, not total compute cost. It does not include the cost of the coding agent reading logs, writing code, and inspecting videos.</p>
+<p>So the comparison should not be read as "heuristics have broadly beaten reinforcement learning." The more accurate signal is: this is not a hand-carved single-task example. A rough coding-agent batch process, without inspecting intermediate results, can already push the Atari57 median into the neighborhood of those baselines.</p>
+<p>An aggregate curve compresses the distribution into one median, so I also plotted the 57 games individually. Raw Atari returns are not comparable across games, so the figure still uses each game's HNS. The dashed line at <code>1.0</code> marks human score.</p>
+<p><img alt="Atari57 per-game HNS comparison" src="atari57_per_game_hns_comparison.png"></p>
+<p>The plot shows two things. First, there is overlap: in games such as Breakout, Krull, DoubleDunk, Boxing, and DemonAttack, both the heuristic and the reinforcement-learning baseline clearly exceed human score. Second, the differences are large: the heuristic is relatively stronger on Asterix, Jamesbond, Centipede, Bowling, Skiing, and Tennis; PPO is much stronger on Atlantis, VideoPinball, UpNDown, Assault, RoadRunner, and StarGunner.</p>
+<p>This distribution is more informative than one median. The heuristic system did not uniformly learn "how to play Atari." In some games it quickly wrote down an effective mechanism. In others, it still had not found the right state representation or long-term strategy.</p>
+<p>What I find most interesting about Atari57 is that the source of sample efficiency changed. Traditional neural-network Atari learning has to relearn representation, credit assignment, and action semantics from high-dimensional input in every environment. Codex decomposes the environment into maintainable small software systems: aiming and dodging in shooters, bounces in paddle games, position rules in avoidance games, wrapper details, and each environment's own failed-experiment ledger. It did not train a general neural network. It generated, verified, and edited a batch of local heuristic policies.</p>
+<p>By this point, the game scores are no longer the main thing. The more interesting fact is that this workflow can already generate, verify, and edit local policies in batches. Software now has a sufficiently general maintainer that can write feedback back into code, tests, logs, and memory.</p>
+<h2>5. Counterexample: Montezuma</h2>
+<p>Some environments are a poor fit for ordinary reactive heuristics. Montezuma's Revenge is the clearest example.</p>
+<p>In an earlier standalone Montezuma search, state-graph search reduced the key distance from <code>72</code> to <code>28</code>, but the reward was still <code>0</code>. Later, in the Atari57 pure-image batch, one unattended Codex run reached <code>400.0</code>: the repaired best replay was <code>repair_replay_r1_t19734</code>, seed <code>10001</code>, using <code>1769</code> environment steps. At heart, it was an open-loop route made of <code>86</code> macro-actions.</p>
+<p>I included the recovered <a href="heuristic_montezuma_400_policy.py">policy</a>, <a href="heuristic_montezuma_400_macros.json">macro actions</a>, and <a href="montezuma_400_render_seed10001_h264.mp4">video</a> in the repo.</p>
+<video controls src="montezuma_400_render_seed10001_h264.mp4" width="360"></video>
+
+<p>The problem Montezuma exposes is not "heuristics cannot work at all." The ordinary <code>policy.py</code> state-machine format is not expressive enough: actions need precise timing, failures need recovery, and intermediate states need to re-enter the plan. Some environments need composable macro-actions, recoverable search state, and perhaps a program structure better suited to long-horizon planning than ordinary <code>if else</code>.</p>
+<p>This kind of failure is valuable for a heuristic system. It tells us where the boundary is, and it suggests what the next abstraction might need to look like. A system having metabolism does not mean it can digest anything. Metabolism itself needs structure.</p>
+<h2>6. Beyond Games</h2>
+<p>Games are only a microscope. The case much closer to most readers is the code repository.</p>
+<p>At this point, "loop" is too vague. To move the idea from games into other software systems, I need to unfold the structure a little:</p>
+<pre><code class="language-text">HS = (O, Z, P, A, R, M, U)
+</code></pre>
+<p><code>O / observation</code> is what the system can see: images, RAM, state vectors, logs, request features, code diffs, monitoring metrics, user feedback.</p>
+<p><code>Z / state</code> is the internal state representation: ball and paddle positions, robot posture, service load, PR risk regions, failure modes, caches, beliefs, or risk labels.</p>
+<p><code>P / policy or program</code> is the action logic: branches, thresholds, state machines, macro-actions, controllers, routing strategies, fallback strategies, or test-selection strategies.</p>
+<p><code>A / action</code> is what the system actually does in the outside world: Atari button presses, robot joint torques, a routing change, a selected test set, a code patch, a reply, or a memory write.</p>
+<p><code>R / feedback</code> is the evaluation signal: reward, test result, latency, error rate, cost, human label, online metric, replay score. It does not have to be a single scalar, but it needs to give updates a direction.</p>
+<p><code>M / memory</code> stores history: policy versions, configs, experiment results, failure reasons, replay material, rollback points. Without this layer, an agent can easily spin in circles after twenty rounds.</p>
+<p><code>U / update</code> uses <code>R</code> and <code>M</code> to modify <code>Z</code> and <code>P</code>; sometimes it also modifies the <code>A</code> interface, the <code>R</code> evaluation method, or the organization of <code>M</code>. The change has to persist: in code, config, tests, memory, or policy versions, affecting the next run. In this article, the coding agent is usually one implementation of <code>U</code>. Once it is connected, the boundary of the HS includes this update path, not just the policy code being executed.</p>
+<p>This does not guarantee every update makes the system better. The update process still needs regression or selection to filter out obviously worse changes. Without filtering, the system is only drifting.</p>
+<h3>6.1 Code Repository Maintenance</h3>
+<p>Experienced engineers use many heuristic judgments during code review:</p>
+<pre><code class="language-text">This diff touches auth, so the risk is high.
+This test failure looks flaky; first check whether main is failing too.
+This function is reused by several services, so its return semantics cannot change casually.
+This change touches startup, so it may affect import time.
+This PR is too large; split out the mechanical change first.
+</code></pre>
+<p>These judgments are not formal proofs, and they are not trained end to end. They are engineering experience. But they are not purely subjective either, because CI, production incidents, historical commits, review comments, and test coverage keep correcting them.</p>
+<p>Using the seven slots above, a code repository can be written as:</p>
+<pre><code class="language-text">O / observation = diff, CI logs, code index, historical incidents, metrics
+Z / state       = risk regions, dependency graph, owners, failure modes, coverage
+P / policy      = review rules, test selection, PR splitting, rollback strategy
+A / action      = review comments, test runs, code patches, PR splits, rollbacks
+R / feedback    = CI results, online metrics, review feedback, defect regression rate
+M / memory      = PR history, failure records, decision reasons, fix paths
+U / update      = coding agent edits check scripts, test strategy, docs, and code
+</code></pre>
+<p>In this view, a coding agent is doing much more than "help me write code." It is maintaining a repository's heuristic control system: which paths are risky, which tests are informative, which failures resemble historical problems, and which rules have gone stale.</p>
+<p>Software engineering has already prepared mature material for this kind of system. Unit tests, integration tests, golden cases, regression tests, lint, type checks, CI, and performance baselines are not just quality gates. They establish protocols for the codebase. A protocol says what a function promises to the outside world, which old bugs must not recur, where a library boundary sits, and which tests must run after certain paths change.</p>
+<p>Once the protocol is complete enough, the internal implementation can be replaced more boldly. For example, as long as a parser continues to pass golden syntax cases and error-recovery tests, it matters less whether the inside is handwritten recursive descent, a parser generator, or a state machine refactored by an agent. What matters is whether the boundary covers downstream behavior.</p>
+<p>Tests, lint, and CI are still not enough by themselves. They begin to look like the HS in this article when a coding agent can use failure records and historical experience to modify tests, check scripts, risk labels, and PR-splitting strategies. Agents are strongest under clear feedback. The more tests behave like executable protocols, the more an agent can search inside the boundary. Conversely, if the tests are bad, the agent will exploit the holes faster and push the system toward a wrong local optimum. A bad test is a bad reward signal wearing software-engineering clothes.</p>
+<p>The real reversal is in the standard for which code is worth owning:</p>
+<pre><code class="language-text">What coding agents change is not just the speed of writing code.
+They change which code is worth owning for a long time.
+</code></pre>
+<p>Many rule layers used to be "not worth writing," not because they were useless, but because nobody wanted to maintain them. With coding agents, some local rules that used to be too fine-grained, too annoying, or too dependent on failure history may become worth owning again. Tests, logs, patches, and memory may be more than engineering support; they may become software's learning organs.</p>
+<h3>6.2 Software That Already Lives on Heuristics</h3>
+<p>The more typical examples are software systems where the global optimum is too expensive to find cheaply.</p>
+<p>Scheduling systems are like this. Cluster scheduling, job queues, GPU allocation, and Kubernetes placement all have to trade off priority, fairness, data locality, preemption, cold start, retry behavior, and tail latency. Combinatorial optimization is similar: vehicle routing, bin packing, rostering, warehouse picking, and ad-budget allocation all have exploding search spaces, so the final system inevitably grows greedy rules, local search, beam search, repair heuristics, and pruning rules.</p>
+<p>Traffic splitting and staged rollout are also more complicated than turning <code>1%</code> into <code>10%</code>. A real strategy has to watch latency, error rate, capacity, cost, user consistency, and rollback risk at the same time. Database query planners and compiler optimizers are old-school heuristic systems too: join order, index selection, inlining thresholds, loop unrolling, and pass ordering are all built on cost models, thresholds, pruning, and regression benchmarks.</p>
+<p>These systems share one property: heuristics are already on the critical path, but they are expensive to maintain. A slow-query fix might become a new join-cost rule and a regression benchmark. A threshold that works well under today's traffic can start oscillating next month when the distribution shifts. A pile of local patches can sit around for years, with nobody daring to delete or edit them.</p>
+<p>The HS view is interesting here because failed jobs, slow queries, rollout incidents, benchmark regressions, scheduling replays, and production logs can all become update material. A coding agent can read failed samples, edit scoring functions, fallback strategies, pruning rules, test sets, and replay scripts, then write effective experience back into policies and docs. In the past, these heuristics had to be hand-maintained by a small group of experts. Now they may become software systems that continuously absorb feedback.</p>
+<h3>6.3 Robotics</h3>
+<p>Ant naturally suggests robotics, but this is also where it is easiest to overclaim.</p>
+<p>In simulation, Codex can try tens of thousands or millions of steps; falling over just means reset. In the real world, every failure costs time, hardware wear, safety margin, scene reset, and sensor drift. So this loop cannot be moved directly onto a physical robot, and it definitely cannot run blindly the way it does in simulation.</p>
+<p>I prefer to think of it as a <strong>hierarchical HS</strong>: a set of small loops arranged in layers. Low layers handle local safety and low-latency control. Middle layers handle limb coordination and contact. Higher layers handle tasks, recovery, and long-term memory.</p>
+<pre><code class="language-text">joint-level HS -&gt; limb-level HS -&gt; whole-body balance HS -&gt; task-level HS
+</code></pre>
+<p>One joint can be an HS; several joints can compose a limb HS; limbs can compose body and whole-body HS.</p>
+<p><img alt="From joint-level HS to whole-body HS" src="ig_0c2dd0d2f07176560169fab20d5a708196b02a2dd41def1241.png"></p>
+<p>A joint-level HS sees encoders, torque, current, IMU, and contact sensors; turns them into errors, velocities, loads, and danger flags; then outputs target positions, target velocities, or torque commands. Its feedback is overload, slip, energy use, and safety violations. Updates mainly change gains, thresholds, protection rules, and tests. These updates must be conservative. An agent should not casually rewrite safety boundaries on a physical robot.</p>
+<p>Limb-level and whole-body HS can handle gait, contact strategy, fall recovery, posture, and energy use. Task-level HS sits above that and handles longer flows such as "approach the cup, adjust the gripper, then recover from failure." In this view, a robot is not made of many "HS joints." It is made of many local HS connected through a hierarchy.</p>
+<p>The most imaginative version looks like this: after a new robot powers on, a coding agent connects to simulation, logs, video, sensor streams, and regression tests. It first lets joint-level HS find stable behavior inside safety boundaries, then lets limb-level HS grow coordination, then lets whole-body HS grow standing, recovery, and balance, and only later moves toward task-level actions. The agent is like an update pipeline plugged into the system: it continuously feeds electricity, compute, tokens, failure videos, and test results into the system, then rewrites feedback into code, parameters, safety rules, and memory. Evolution happens inside: each layer's state representation, control policy, and recovery actions slowly reshape themselves until they better fit this particular body.</p>
+<p>If that path works, a process that once looked like an infant spending months learning to stand, walk, and recover from falls might one day be compressed by simulation, replay, and agent maintenance into an hour of software metabolism. This is not one big model directly "knowing how to walk." It is a hierarchical heuristic system being fed feedback, filtering out bad mutations, and solidifying good motions. In this picture, "metabolism" means feedback is digested into system changes; "evolution" means the system itself grows into a more suitable form through those changes.</p>
+<p>Manipulation tasks are much harder. Folding clothes, organizing cables, or opening soft packaging is not just about how robot joints move. The object state itself matters: cloth deformation, occlusion, contact history, friction, wrinkles, target shape. Tuning a few joint phases will not solve that. Without good perceptual representations, recoverable action primitives, and sufficiently realistic simulation, a coding agent will write brittle rules on top of the wrong state variables.</p>
+<p>The realistic form is probably a hybrid system: simulation and offline data generate and filter candidate heuristics; the real robot only runs small, safe, guarded validations; neural networks handle perception, object-state estimation, and long-horizon value; hierarchical HS handles low-latency reflexes, safety constraints, local recovery, task decomposition, and test criteria; coding agents maintain interfaces, detectors, failure handling, and regression tests.</p>
+<p>Framed this way, the point is not "handwrite cloth folding with heuristics." It is to pull some local regularities that can be written as programs out of end-to-end training.</p>
+<h3>6.4 Continual Learning and Coupling Complexity</h3>
+<p>At this point, the real research question shifts from "can heuristics be written" to "how complex can an HS get while still remaining maintainable?"</p>
+<p>In machine-learning terms, the closest concept may be continual learning. Online learning is more about whether updates happen as data arrives; continual learning is more about how a system keeps updating over time without forgetting old abilities. HS adds another layer: after new feedback arrives, the thing being rewritten is not limited to parameters. It can include state detectors, thresholds, macro-actions, tests, log parsers, memory organization, and even the procedure for collecting the next round of feedback. As long as those changes persist and affect the next run, the software is learning continuously.</p>
+<p>This makes "not forgetting" more concrete. Neural-network continual learning worries about catastrophic forgetting. HS can forget too, but the failure mode looks more like software engineering: a new rule fixes one failure mode while breaking an old scenario; a memory keeps steering the agent in a wrong direction; a patch silently changes a boundary that tests did not cover. Regression tests, fixed replays, experiment records, version diffs, and simplification passes are the anti-forgetting mechanisms of HS. They let feedback accumulate, so the next round does not have to start again from intuition.</p>
+<p>So the sharper question is: if we can characterize the complexity of a heuristic, we can ask how complex an HS an agent can actually maintain. I currently prefer to call this quantity <strong>coupling complexity</strong>: how many mutually entangled states, rules, tests, feedback channels, and pieces of history a single update has to respect. Lines of code and rule counts are only the surface. What consumes context is the size of the interaction surface.</p>
+<p>Looking toward code, coupling complexity is constrained by module boundaries, interface stability, test coverage, fixed replays, log observability, feedback latency, rollback cost, and state reproducibility. Good modularity is not just less code; it cuts global coupling into local coupling. Good tests do not prove the system correct; they let the agent avoid simulating the whole system in its head every time.</p>
+<p>Looking toward the coding agent, how much coupling complexity it can hold depends on model capability, context length, memory quality, tool quality, and experiment speed. Stronger models can handle more interactions at once. Longer context loses fewer clues. Memory preserves experience across rounds. Search, execution, localization, and replay tools move part of the cognitive load outside the model. If any one of these is weak, the ceiling on maintainable coupling complexity drops.</p>
+<p>Put the two sides together, and we get a set of research hypotheses:</p>
+<pre><code class="language-text">Clearer feedback increases the coupling complexity that each unit of agent intelligence can maintain.
+Given the same tools and feedback, stronger models can handle higher coupling complexity.
+Modularity, tests, and replay move part of coupling complexity into the environment.
+Memory and tools increase the agent's effective context.
+An HS that only grows and never compresses will keep increasing coupling complexity
+until it exceeds maintainability.
+</code></pre>
+<p>This also explains why HS sits so close to old software-engineering philosophy. Modularity is not aesthetic; it lowers coupling complexity. Tests are not just final acceptance; they are executable feedback. Tests, replays, CI, and benchmarks are feedback channels. Logs, traces, and replays are software's senses: without them, failures cannot enter the system, so metabolism cannot happen. Refactoring compresses learning history by folding a pile of local patches back into a simpler representation. Technical debt is uncompressed feedback residue: each failure gets patched into a new rule. That may work in the short term, but over time coupling complexity explodes.</p>
+<p>Breakout reached <code>864</code> partly because the rules were simple, and partly because failures could be replayed on video, locally reproduced, and regression-checked. Ant is much more complex, but its structure is layered, feedback is dense, and the policy can be split into rhythm, posture, contact, and residual planning. Montezuma points at another boundary: long-horizon timing, recoverable state, and macro-action composition quickly push coupling complexity so high that ordinary <code>policy.py</code> is not enough.</p>
+<p>This may be the quantity most worth studying for HS: given a model, context, memory, tools, test protocol, and feedback quality, how much coupling complexity can a system stably carry? If we can measure that curve, maintenance cost stops being only a metaphor and becomes something we can compare.</p>
+<h2>7. Limitations</h2>
+<p>First, the results depend on the current agent capability. This article mainly discusses Codex 5.4 <code>xhigh</code>. Different models, reasoning budgets, tools, and prompts may change the distribution. This is a report of a phenomenon, not a full benchmark.</p>
+<p>Second, the single-task experiments had a human in the loop. Breakout and Ant were not fully automated benchmarks; I looked at results and decided where to let Codex continue. Atari57 is the unattended batch run. Mixing these two kinds of evidence would blur the conclusion.</p>
+<p>Third, compute comparisons require care. Codex's compute for writing code, reading logs, and watching videos is not counted as neural-network training compute. MPC in Ant and HalfCheetah also performs local model rollouts. The environment-step numbers mainly show that real environment interaction is low; they do not mean total compute is cheap.</p>
+<p>Fourth, being updateable does not mean automatically improving. An agent-generated heuristic system can become more and more complicated until it turns into unmaintainable code. Experiment ledgers, regression tests, and simplification passes are not optional. They are the main mechanisms that keep the system from collapsing.</p>
+<p>Fifth, this should not be framed as a replacement for reinforcement learning. Neural networks still have clear advantages in complex vision, cross-state generalization, and long-horizon value estimation. The reasonable direction is still composition: neural networks handle perception, generalization, and long-horizon strategy; heuristic systems handle local reflexes, safety constraints, fallback strategies, test criteria, and interpretable debugging.</p>
+<p>These limits do not make the idea smaller; they show where it actually applies. For software to have metabolism, it cannot rewrite itself freely. It needs tests, permissions, rollback, interpretable records, human review, and sandboxes. Without those, metabolism turns into uncontrolled growth.</p>
+<h2>8. Conclusion</h2>
+<p>This article started from a small testing need: can we write cheap, reproducible policies that are much stronger than random, so environments can be driven into informative states? By the end, the scores have moved into the background. The more important point is that when a coding agent can continuously read failures, edit code, add tests, write records, and run regressions, a heuristic policy can become a software system that can be maintained over time.</p>
+<p>Breakout gives the clearest starting point. The path <code>387 -&gt; 507 -&gt; 839 -&gt; 864</code> came from a loop that kept absorbing failures: action semantics, state detection, stuck ball paths, low fast balls, late-game offset release, paddle-drift compensation. Each step was pinned down by video, logs, and regression tests. Ant and HalfCheetah show that complexity can also be maintained. Atari57 shows that the workflow can run in batch. Montezuma reminds us that long-horizon timing and recoverable state quickly raise coupling complexity.</p>
+<p>The judgment this article wants to preserve is: many heuristics had no future not necessarily because they were too dumb, but because their maintenance cost was too high. Nobody wanted to care for hundreds of local rules, failure records, test boundaries, and state representations over the long run. Coding agents change that maintenance-cost curve. Rules, tests, logs, memory, and patches used to be scattered engineering materials. Now they can start to form a heuristic system that keeps updating.</p>
+<p>This also gives continual learning a different software form. Learning does not have to happen only in parameters. When new feedback enters a system and rewrites state detectors, tests, macro-actions, memory, log parsers, and the next policy, the software itself is learning. Old software-engineering principles gain new meaning here: modularity lowers coupling complexity, tests provide feedback, logs and replays make failures visible, and refactoring compresses history.</p>
+<p>The next quantity worth measuring is how much coupling complexity an HS can stably carry under a given model, context, memory, toolset, test protocol, and feedback quality. If that quantity can be measured, "maintenance cost" becomes more than intuition. It becomes an object we can compare, and it can explain why some systems are suitable for long-term agent maintenance while others quickly turn into a big ball of mud.</p>
+<p>In the past, writing software mostly meant writing how it runs now. Increasingly, we will also write how it absorbs future feedback, compresses history, and grows new behavior.</p>
+<h2>Disclaimer</h2>
+<p>This article represents only my personal views. It does not represent any company position, and the discussion here is unrelated to any specific company project, product plan, or internal work.</p>
+<h2>Acknowledgements</h2>
+<p>Thanks to <a href="https://costa.sh/">Costa Huang</a> and <a href="https://tairanhe.com/">Tairan He</a> for feedback.</p>
+<h2>Citation</h2>
+<p>If you need to cite this article in LaTeX, you can start with the BibTeX below. After publication, replace <code>url</code> with the final link.</p>
+<pre><code class="language-bibtex">@misc{weng2026heuristic_system,
+  title = {Heuristic System: Software Evolves Through Metabolism},
+  author = {Weng, Jiayi},
+  year = {2026},
+  month = may,
+  howpublished = {\url{https://example.com/heuristic-system}},
+  note = {Blog post}
+}
+</code></pre>
+<h2>Appendix: Reproducing Five Representative Results</h2>
+<h3>A.1 Pong 21</h3>
+<pre><code class="language-bash">python heuristic_pong.py \
+  --policy ram \
+  --episodes 1 \
+  --seed 0
+</code></pre>
+<p>The current Gym version prints a maintenance warning first. The useful output is:</p>
+<pre><code class="language-text">episode=0 score=21.0
+summary: episodes=1 mean=21.000 min=21.0 max=21.0
+</code></pre>
+<h3>A.2 Breakout 864</h3>
+<pre><code class="language-bash">rm -f /tmp/repro_breakout_864.jsonl /tmp/repro_breakout_864.csv
+python heuristic_breakout.py \
+  --policy ram \
+  --episodes 1 \
+  --seed 0 \
+  --max-steps 108000 \
+  --deadband 3 \
+  --chase-lead-steps 6 \
+  --tunnel-offset 0 \
+  --launch-offset 24 \
+  --fast-ball-min-vy 3 \
+  --fast-low-ball-lead-steps 3 \
+  --stuck-trigger-steps 1024 \
+  --stuck-switch-steps 256 \
+  --stuck-offset 12 \
+  --stuck-release-horizon-steps 8 \
+  --brick-balance-deadzone 0.01 \
+  --brick-balance-bias-min-score 432 \
+  --late-game-paddle-lag-px 2 \
+  --late-game-lag-ball-y 170 \
+  --trial-name repro_breakout_864 \
+  --log-path /tmp/repro_breakout_864.jsonl \
+  --summary-path /tmp/repro_breakout_864.csv
+</code></pre>
+<p>The expected output should include <code>score=864.0</code> and <code>mean=864.000</code>.</p>
+<h3>A.3 Ant Default MPC Policy</h3>
+<p>The command below reproduces the final default MPC policy. It is much slower than Breakout because each real environment step evaluates <code>96 x 10</code> candidate residual actions inside a local MuJoCo model.</p>
+<pre><code class="language-bash">rm -f /tmp/repro_ant_6146_eval5.jsonl /tmp/repro_ant_6146_eval5.csv
+python heuristic_ant.py \
+  --policy mpc \
+  --episodes 5 \
+  --seed 0 \
+  --max-steps 1000 \
+  --mujoco-xml-path ant_envpool.xml \
+  --trial-name repro_ant_6146_eval5 \
+  --log-path /tmp/repro_ant_6146_eval5.jsonl \
+  --summary-path /tmp/repro_ant_6146_eval5.csv
+</code></pre>
+<p>The expected output should include <code>mean=6005.521</code>, <code>min=5776.805</code>, and <code>max=6146.208</code>. My local rerun printed:</p>
+<pre><code class="language-text">episode=0 score=6146.208 x_position=285.434
+episode=1 score=5982.507 x_position=277.088
+episode=2 score=6028.890 x_position=279.226
+episode=3 score=5776.805 x_position=267.084
+episode=4 score=6093.194 x_position=282.733
+eval_summary: episodes=5 env_steps=5000 mean=6005.521 min=5776.805 max=6146.208 x_mean=278.313 x_max=285.434
+</code></pre>
+<h3>A.4 HalfCheetah Staged-Tree MPC 5-Episode Recheck</h3>
+<p>The command below reproduces the 5-episode evaluation on the checked-in script path. It is noticeably slower than a normal rollout because each real environment step performs online model scoring.</p>
+<pre><code class="language-bash">python heuristic_halfcheetah_v5.py \
+  --policy mpc-staged-tree-asym-pd-cpg \
+  --eval-episodes 5 \
+  --eval-seed 100
+</code></pre>
+<p>My local rerun printed:</p>
+<pre><code class="language-json">{
+  &quot;episodes&quot;: 5,
+  &quot;frames&quot;: 5000,
+  &quot;max_return&quot;: 12041.189857475818,
+  &quot;mean_return&quot;: 11836.693449819431,
+  &quot;min_return&quot;: 11735.02927325886,
+  &quot;policy&quot;: &quot;mpc-staged-tree-asym-pd-cpg&quot;,
+  &quot;returns&quot;: [
+    12041.189857475818,
+    11735.02927325886,
+    11854.710591778263,
+    11767.164473961016,
+    11785.373052623192
+  ],
+  &quot;std_return&quot;: 109.49617764723155
+}
+</code></pre>
+<h3>A.5 Montezuma 400 Replay</h3>
+<p>The command below reproduces the <code>400</code>-point open-loop route recovered from the Atari57 batch run. This route is not a general reactive policy; it is a replay made of <code>86</code> macro-actions, which is why the main text treats it as a boundary case.</p>
+<pre><code class="language-bash">python heuristic_montezuma_400_policy.py \
+  --metadata-out /tmp/repro_montezuma_400.json
+</code></pre>
+<p>The current Gym version prints a maintenance warning first. The useful output is:</p>
+<pre><code class="language-json">{
+  &quot;env_id&quot;: &quot;MontezumaRevenge-v5&quot;,
+  &quot;seed&quot;: 10001,
+  &quot;score&quot;: 400.0,
+  &quot;env_steps&quot;: 1769,
+  &quot;done&quot;: true,
+  &quot;macro_count&quot;: 86,
+  &quot;scripted_action_steps&quot;: 1793,
+  &quot;expected_score&quot;: 400.0,
+  &quot;expected_steps&quot;: 1769,
+  &quot;record_mp4&quot;: null,
+  &quot;frame0_png&quot;: null
+}
+</code></pre>
+    </article>
+    <article id="article-zh" class="lang-pane" lang="zh-CN" hidden>
 <h1>Heuristic System：软件在代谢中进化</h1>
 <blockquote>
 <p>Jiayi Weng</p>
@@ -527,5 +944,57 @@ eval_summary: episodes=5 env_steps=5000 mean=6005.521 min=5776.805 max=6146.208 
 </code></pre>
     </article>
   </main>
+  <script>
+(function () {
+  const panes = {
+    en: document.getElementById('article-en'),
+    zh: document.getElementById('article-zh'),
+  };
+  const buttons = {
+    en: document.getElementById('lang-en'),
+    zh: document.getElementById('lang-zh'),
+  };
+  const titles = {
+    en: 'Heuristic System: Software Evolves Through Metabolism',
+    zh: 'Heuristic System：软件在代谢中进化',
+  };
+  const storageKey = 'heuristic_system_blog_lang_v1';
+
+  function setLanguage(lang, updateUrl) {
+    if (!panes[lang]) lang = 'en';
+    for (const key of Object.keys(panes)) {
+      const selected = key === lang;
+      panes[key].hidden = !selected;
+      buttons[key].classList.toggle('active', selected);
+      buttons[key].setAttribute('aria-pressed', selected ? 'true' : 'false');
+    }
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    document.title = titles[lang];
+    try { window.localStorage.setItem(storageKey, lang); } catch (_) {}
+    if (updateUrl) {
+      const url = new URL(window.location.href);
+      url.hash = lang === 'zh' ? 'zh' : '';
+      window.history.replaceState(null, '', url);
+    }
+  }
+
+  buttons.en.addEventListener('click', () => setLanguage('en', true));
+  buttons.zh.addEventListener('click', () => setLanguage('zh', true));
+
+  let initial = 'en';
+  if (window.location.hash === '#zh') {
+    initial = 'zh';
+  } else if (window.location.hash === '#en') {
+    initial = 'en';
+  } else {
+    try {
+      const saved = window.localStorage.getItem(storageKey);
+      if (saved === 'en' || saved === 'zh') initial = saved;
+    } catch (_) {}
+  }
+  setLanguage(initial, false);
+})();
+
+  </script>
 </body>
 </html>

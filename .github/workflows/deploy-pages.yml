@@ -1,0 +1,82 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Prepare static site
+        run: |
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import shutil
+          from urllib.parse import urlparse
+
+          root = Path.cwd()
+          source = root / "blog_heuristic_system.html"
+          site = root / "_site"
+
+          class LocalRefParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.refs = set()
+
+              def handle_starttag(self, tag, attrs):
+                  for key, value in attrs:
+                      if key not in {"src", "href"} or not value:
+                          continue
+                      parsed = urlparse(value)
+                      if parsed.scheme or parsed.netloc or value.startswith("#"):
+                          continue
+                      self.refs.add(Path(parsed.path))
+
+          site.mkdir(exist_ok=True)
+          shutil.copy2(source, site / "index.html")
+          (site / ".nojekyll").write_text("")
+
+          parser = LocalRefParser()
+          parser.feed(source.read_text())
+          for ref in sorted(parser.refs):
+              if ref.is_absolute() or ".." in ref.parts:
+                  raise ValueError(f"Unexpected local ref: {ref}")
+              src = root / ref
+              if not src.exists():
+                  raise FileNotFoundError(src)
+              dst = site / ref
+              dst.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(src, dst)
+          PY
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
