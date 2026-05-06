@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent
 SOURCE_MD = ROOT / "blog_heuristic_system.md"
 HTML_PATH = ROOT / "blog_heuristic_system.html"
 STYLE_SOURCE = ROOT / "blog_heuristic_policy_atari_mujoco.html"
-PAGE_TITLE = "Heuristic Systems: Software Starts to Self-Evolve"
+PAGE_TITLE = "Heuristic System: Software Evolves Through Metabolism"
 
 
 def extract_style(html: str) -> str:
