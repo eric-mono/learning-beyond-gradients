@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 import markdown
 
@@ -8,8 +7,114 @@ ROOT = Path(__file__).resolve().parent
 EN_MD = ROOT / "blog_heuristic_system.en.md"
 ZH_MD = ROOT / "blog_heuristic_system.md"
 HTML_PATH = ROOT / "blog_heuristic_system.html"
-STYLE_SOURCE = ROOT / "blog_heuristic_policy_atari_mujoco.html"
 PAGE_TITLE_EN = "Heuristic System: Software Evolves Through Metabolism"
+
+
+STYLE = """:root {
+  color-scheme: light;
+  --bg: #f8fafc;
+  --paper: #ffffff;
+  --ink: #111827;
+  --muted: #4b5563;
+  --line: #d9e2ec;
+  --accent: #0f766e;
+  --accent-2: #b45309;
+  --code-bg: #0f172a;
+  --code-ink: #e5e7eb;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  font-size: 18px;
+  line-height: 1.72;
+}
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 56px 28px 96px;
+  background: var(--paper);
+  min-height: 100vh;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08);
+}
+.lang-switch-wrap {
+  position: sticky;
+  top: 12px;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+  margin: -30px 0 22px;
+}
+.lang-switch {
+  pointer-events: auto;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(8px);
+}
+.lang-switch button {
+  min-width: 72px;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 12px;
+  background: transparent;
+  color: var(--muted);
+  font: 700 14px/1 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+.lang-switch button.active {
+  background: var(--ink);
+  color: #fff;
+}
+.lang-pane[hidden] { display: none !important; }
+h1, h2, h3 {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.18;
+  letter-spacing: 0;
+}
+h1 { margin: 0 0 28px; font-size: 46px; max-width: 860px; }
+h2 { margin: 56px 0 18px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 30px; }
+h3 { margin: 34px 0 12px; font-size: 22px; }
+p { margin: 18px 0; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+ul, ol { padding-left: 1.45em; }
+li { margin: 8px 0; }
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.88em;
+  background: #edf2f7;
+  padding: 0.1em 0.28em;
+  border-radius: 4px;
+}
+pre { overflow-x: auto; margin: 22px 0; padding: 18px 20px; border-radius: 8px; background: var(--code-bg); color: var(--code-ink); line-height: 1.48; }
+pre code { background: transparent; color: inherit; padding: 0; border-radius: 0; font-size: 0.88em; }
+img, video { display: block; max-width: 100%; height: auto; margin: 26px auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+video { background: #0b1020; }
+details { margin: 24px 0 30px; border: 1px solid var(--line); border-radius: 8px; background: #fbfdff; overflow: hidden; }
+summary { cursor: pointer; padding: 14px 18px; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: 700; color: var(--accent-2); background: #fff7ed; border-bottom: 1px solid var(--line); }
+details > *:not(summary) { margin-left: 18px; margin-right: 18px; }
+details pre { margin: 18px; max-height: 70vh; }
+blockquote { margin: 24px 0; padding: 2px 20px; border-left: 4px solid var(--accent); color: var(--muted); background: #f0fdfa; }
+table { border-collapse: collapse; width: 100%; margin: 24px 0; font-size: 0.94em; }
+th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; }
+th { background: #f1f5f9; }
+@media (max-width: 720px) {
+  body { font-size: 16px; }
+  .page { padding: 32px 18px 64px; box-shadow: none; }
+  .lang-switch-wrap { margin: 0 0 18px; top: 0; }
+  .lang-switch button { min-width: 66px; padding: 7px 10px; }
+  h1 { font-size: 34px; }
+  h2 { font-size: 24px; }
+}
+"""
 
 
 LANG_SCRIPT = """(function () {
@@ -64,13 +169,6 @@ LANG_SCRIPT = """(function () {
 """
 
 
-def extract_style(html: str) -> str:
-    match = re.search(r"<style>\n?(.*?)\n?  </style>", html, re.S)
-    if match is None:
-        raise RuntimeError(f"Could not find style block in {STYLE_SOURCE}")
-    return match.group(1)
-
-
 def render_markdown(path: Path) -> str:
     return markdown.markdown(
         path.read_text(),
@@ -80,7 +178,6 @@ def render_markdown(path: Path) -> str:
 
 
 def main() -> None:
-    style = extract_style(STYLE_SOURCE.read_text())
     en_html = render_markdown(EN_MD)
     zh_html = render_markdown(ZH_MD)
     HTML_PATH.write_text(
@@ -91,7 +188,7 @@ def main() -> None:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{PAGE_TITLE_EN}</title>
   <style>
-{style}
+{STYLE}
   </style>
 </head>
 <body>

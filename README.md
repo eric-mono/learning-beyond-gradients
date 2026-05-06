@@ -1,21 +1,27 @@
-# EnvPool Heuristics Blog Artifacts
+# Heuristic System Blog Artifacts
 
 This repository contains the public artifacts for:
 
-**Make Heuristics Great Again: Letting Codex Build Heuristic Systems from Scratch**
+**Heuristic System: Software Evolves Through Metabolism**
 
-The rendered article is:
+Published article:
 
-- `blog_heuristic_policy_atari_mujoco.html`
-- `blog_heuristic_system.html`
+- https://trinkle23897.github.io/heuristic-system/
 
-The source articles are:
+Artifact repository:
 
-- `blog_heuristic_policy_atari_mujoco.en.md`
-- `blog_heuristic_policy_atari_mujoco.md`
-- `blog_heuristic_system.md`
+- https://github.com/Trinkle23897/heuristic-system
 
-The HTML page includes an English/Chinese language switcher and uses relative links to the figures, videos, scripts, and CSV files in this repository.
+The article is bilingual. The rendered HTML defaults to English and includes a Chinese switcher.
+
+## Source Files
+
+- `blog_heuristic_system.en.md`: English article source.
+- `blog_heuristic_system.md`: Chinese article source.
+- `blog_heuristic_system.html`: rendered bilingual HTML.
+- `render_heuristic_system_blog.py`: local renderer.
+
+Older draft blog files have been removed; this repository now tracks only the current heuristic-system essay and its artifacts.
 
 ## Local Preview
 
@@ -28,20 +34,14 @@ python3 -m http.server 8000
 Then open:
 
 ```text
-http://127.0.0.1:8000/blog_heuristic_policy_atari_mujoco.html
-```
-
-The heuristic-system essay is available at:
-
-```text
 http://127.0.0.1:8000/blog_heuristic_system.html
 ```
 
 Opening the HTML file directly also works in most browsers, but using `http.server` is closer to how the page is served.
 
-## Re-render the HTML
+## Re-render The HTML
 
-Install the only rendering dependency:
+Install the rendering dependency:
 
 ```bash
 python3 -m pip install -r requirements.txt
@@ -50,33 +50,48 @@ python3 -m pip install -r requirements.txt
 Then run:
 
 ```bash
-python3 render_blog.py
 python3 render_heuristic_system_blog.py
 ```
 
-`render_blog.py` reads the two Markdown files, preserves the existing CSS and language-switching JavaScript from `blog_heuristic_policy_atari_mujoco.html`, and rewrites the HTML page in place.
+The renderer reads the English and Chinese Markdown files and rewrites `blog_heuristic_system.html` in place.
 
-`render_heuristic_system_blog.py` renders `blog_heuristic_system.md` into its standalone HTML page using the same CSS.
+## GitHub Pages
+
+The site is deployed by `.github/workflows/deploy-pages.yml` on every push to `main`.
+
+The workflow does not publish the whole repository as the website root. It builds a small `_site` directory containing:
+
+- `index.html`, copied from `blog_heuristic_system.html`.
+- `.nojekyll`.
+- Local files referenced by the article through `src` or `href`, such as figures, videos, scripts, CSVs, and prompt files.
 
 ## Included Artifacts
 
-The repository includes the files needed by the article:
+The repository includes the files needed to inspect and reproduce the article's representative results:
 
 - Pong policy script.
-- Breakout policy, trial logs, sample-efficiency figure, and checkpoint videos.
-- Ant policy, minimal extracted Ant policy, trial logs, sample-efficiency figure, MuJoCo XML, and final-policy video.
-- HalfCheetah policy script, iteration log, and sample-efficiency figure.
-- Montezuma exploratory policies, state/archive search scripts, trial logs, summaries, probe images, plus the recovered Atari57 400-point native-image policy and replay video.
-- Atari57 aggregate and per-game figures, plus the CSV files used to summarize the aggregate/per-game comparisons.
-- The Atari57 batch prompt template used for the unattended Codex CLI runs.
+- Breakout policy, trial summaries, sample-efficiency figure, and checkpoint videos.
+- Ant policy, minimal extracted Ant policy, trial summaries, MuJoCo XML, sample-efficiency figure, and final-policy video.
+- HalfCheetah policy script and iteration log.
+- Montezuma exploratory policies, state/archive search scripts, summaries, probe images, plus the recovered Atari57 400-point native-image policy and replay video.
+- Atari57 aggregate/per-game figures and CSV summaries.
+- The Atari57 batch prompt template used for unattended Codex CLI runs.
 
-The reproduction commands for individual Breakout and Ant checkpoints are embedded in collapsible sections inside the article. Those commands assume they are run from the repository root.
+The article appendix contains reproduction commands for five representative results. Those commands assume they are run from the repository root after cloning this repo.
 
-HalfCheetah's longer iteration history and checked policy commands are in `heuristic_halfcheetah_v5_log.md`; the corresponding script is `heuristic_halfcheetah_v5.py`.
+## Runtime Notes
+
+The experiments were written against EnvPool `1.1.1`. The article commands assume the relevant Python environment already has EnvPool and the Atari/MuJoCo runtime dependencies installed.
+
+For Ant, `ant_envpool.xml` must stay next to `heuristic_ant.py`, because the reproduction command references it as:
+
+```bash
+--mujoco-xml-path ant_envpool.xml
+```
 
 ## Montezuma 400-Point Replay
 
-The Atari57 batch found one `MontezumaRevenge-v5` native-image run that reached `400.0` points. The original short-lived `/tmp` video directory is no longer required; the route was recovered from the compressed Atari57 summary rows and packaged here as a standalone open-loop replay:
+The Atari57 batch found one `MontezumaRevenge-v5` native-image run that reached `400.0` points. The route is packaged as a standalone open-loop replay:
 
 ```bash
 python3 heuristic_montezuma_400_policy.py \
@@ -100,27 +115,15 @@ python3 heuristic_montezuma_400_policy.py \
   --metadata-out montezuma_400_render_seed10001_meta.json
 ```
 
-Source thread: `019d4cc1-9e30-78d0-b304-43b07c2aebe0`. The specific repaired best trial is `repair_replay_r1_t19734`, from `MontezumaRevenge-v5__native_obs__repeat1`.
-
-## Runtime Notes
-
-The experiments were written against EnvPool `1.1.1`. The article commands assume the relevant Python environment already has EnvPool and the Atari/MuJoCo runtime dependencies installed.
-
-For Ant, `ant_envpool.xml` must stay next to `heuristic_ant.py`, because the reproduction command references it as:
-
-```bash
---mujoco-xml-path ant_envpool.xml
-```
-
 ## Citation
 
 ```bibtex
-@misc{weng2026codex_heuristic_policy,
-  title = {Make Heuristics Great Again: Letting Codex Build Heuristic Systems from Scratch},
+@misc{weng2026heuristic_system,
+  title = {Heuristic System: Software Evolves Through Metabolism},
   author = {Weng, Jiayi},
   year = {2026},
-  month = apr,
-  howpublished = {\url{https://example.com/codex-heuristic-policy}},
+  month = may,
+  howpublished = {\url{https://trinkle23897.github.io/heuristic-system/}},
   note = {Blog post}
 }
 ```

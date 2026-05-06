@@ -478,6 +478,8 @@ If you need to cite this article in LaTeX, you can use the BibTeX below.
 
 ## Appendix: Reproducing Five Representative Results
 
+The full artifact repository is [https://github.com/Trinkle23897/heuristic-system](https://github.com/Trinkle23897/heuristic-system). The commands below assume you have cloned that repo and are running them from the repository root. The GitHub Pages site only serves the article and the static files it references; the full scripts, CSVs, videos, and experiment artifacts live in the repo.
+
 ### A.1 Pong 21
 
 ```bash
