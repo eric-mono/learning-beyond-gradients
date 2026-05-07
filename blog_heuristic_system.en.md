@@ -2,20 +2,24 @@
 
 > Jiayi Weng
 
-We used to think heuristics lost to neural networks because rules were not smart enough. After these experiments, I suspect something else: in many cases, they lost because they were too expensive to maintain.
+![A coding agent feeds feedback back into software growth](ig_0c2dd0d2f07176560169fbc256930481969d3c6ba3316d5486.png)
 
-I first ran into this while validating [EnvPool](https://github.com/sail-sg/envpool) environments. Random policies were too weak. In many environments, an entire episode never reaches the states where meaningful rewards appear. When a run fails, all you see is a timeout or a score of 0, and it is hard to tell whether the environment is wrong, the wrapper is wrong, or the policy simply never reached an informative state. Training a neural network for every environment would be too heavy as well: training scripts, dependencies, versions, and checkpoints would become a burden inside the test system itself.
+Heuristic roughly means "rule of thumb." It has a long history: rule systems, conditionals, search pruning, scheduling policies, and all kinds of human-written solutions have relied on heuristic algorithms. But after neural networks kicked off this wave of AI, many people instinctively started to feel that if a problem is complex enough, the right answer should eventually be a neural network. Neural networks seem smarter, more adaptive, more "intelligent." Heuristics started to look old-fashioned, like a practical trick from the previous era of software.
+
+After these experiments, I am much less sure that intuition is right. Many heuristics did not fade because they were inherently dumb or capped at a low ceiling. Often, they lost because they were too expensive to maintain. Coding agents change more than the speed of writing code; they also change which code is worth owning for a long time. When writing and revising rules suddenly becomes cheaper, software structures that used to be too fine-grained, too annoying, or too dependent on failure history may become worth maintaining again.
+
+My starting point was much smaller. I was trying to validate [EnvPool](https://github.com/sail-sg/envpool) environments. Random policies were too weak: in many environments, an entire episode never reached the important reward states. When a run failed, all I could see was a timeout or a score of 0, and it was hard to tell whether the environment was wrong, the wrapper was wrong, or the policy simply never reached an informative state. Training a neural network for every environment was also too heavy. Training scripts, dependencies, versions, and checkpoints would become a burden inside the test system itself.
 
 So the question became:
 
 ```text
 Can we write cheap, reproducible heuristics that are much stronger than random,
-and use them to drive environments into informative states?
+just to drive environments into informative states?
 ```
 
-At first I asked Codex directly: "write a policy that solves Breakout." That did not work well. A low score was not very informative: Codex could not tell whether the action semantics were wrong, the state detector was wrong, the evaluation setup was wrong, or the policy structure itself was bad. Later I changed the task into a different shape: do not just hand me a `policy.py`; maintain the whole loop.
+At first I asked Codex directly: "write a policy that solves Breakout." That did not work very well. A low score was not informative: Codex could not tell whether the action semantics were wrong, the state detector was wrong, the evaluation setup was wrong, or the policy structure itself was bad. Later I changed the task shape: do not just hand me a `policy.py`; maintain the whole loop.
 
-The loop looked roughly like this:
+The loop roughly looked like this:
 
 ```text
 probe actions and observations
@@ -33,9 +37,9 @@ At the time, I did not have a name for this. I only felt that the task had chang
 
 ## 1. Breakout: A Perfect Score Without Training
 
-Breakout first looks like a geometry problem: where is the ball, where is the paddle, and where will the ball land after bouncing off the walls? The real trouble comes later. A policy can keep catching the ball indefinitely and still stop making progress because it has fallen into a stable loop.
+Breakout looks like a geometry problem at first: where is the ball, where is the paddle, and where will the ball land after it bounces off the walls? The real trouble comes later. A policy can keep catching the ball while no longer clearing bricks, and the score gets stuck in a stable loop.
 
-Codex did not rush to write the final policy. It first checked the action space and observation shape, then found the paddle, ball, and brick colors in RGB frames, and then used those image labels to scan the 128 RAM bytes. The early experiment ledger looked roughly like this:
+Codex did not rush to write the final policy. It first checked the action space and observation shape, then found paddle, ball, and brick colors in RGB frames, and then used those image labels to scan the 128 RAM bytes, which you can roughly think of as the game's internal state. The early experiment ledger looked like this:
 
 ```text
 trial_name                 score   cumulative_env_steps   note
@@ -46,11 +50,11 @@ baseline_v0                99      16,303                 initial RAM intercept
 tunnel0_v1                387      43,303                 no tunnel offset
 ```
 
-`387` was the first local high score that could easily fool you. The policy could catch the ball reliably, but it was feeding the ball into a cycle: it would not die, and it would not keep clearing bricks. If a human were writing this heuristic by hand, it would be tempting to keep tuning "catch accuracy." Codex looked at the video and the last few dozen trajectory steps and noticed that the real problem was the lack of disturbance in the ball path.
+`387` was the first local high score that could easily fool you. The policy could catch the ball reliably, but it was sending the ball into a cycle: it would not die, and it would not keep clearing bricks. If a human were hand-writing this, it would be tempting to keep tuning "catch accuracy." After watching the video and the last few dozen trajectory steps, Codex judged that the real problem was the lack of disturbance in the ball path.
 
 <video controls src="heuristic_breakout_score387_tunnel0_render210x160.mp4" width="360"></video>
 
-The first key mechanism was to break the loop: if no reward had appeared for a long time, add a periodic offset to the predicted landing point and knock the ball out of the local cycle. This pushed the score from `387` to `507`.
+The first key mechanism was to break the loop. If no reward had appeared for a long time, add a periodic offset to the predicted landing point and knock the ball out of the local cycle. That moved the score from `387` to `507`.
 
 ```python
 if steps_since_reward >= stuck_trigger_steps:
@@ -67,7 +71,7 @@ else:
     offset = 0.0
 ```
 
-Then another failure mode appeared. For fast, low balls, the normal intercept logic made the paddle overreact to lookahead and drift away. Codex added `fast_low_ball_lead_steps=3`, and the score jumped from `507` to `839`.
+Another failure mode came next: fast low balls. If the policy chased the normal intercept, the lookahead could pull the paddle too far away. Codex added `fast_low_ball_lead_steps=3`, and the score jumped from `507` to `839`.
 
 ```python
 if vy > 0.1 and ball_y <= paddle_y:
@@ -80,7 +84,7 @@ else:
     target_x = ball_x + chase_lead_steps * vx
 ```
 
-The move from `839` to `864` felt most like maintaining a system that had already become complicated. Codex tried deadbands, serve offsets, stuck offsets, brick-balance bias, and lookahead steps. Many directions did not help. The useful change was a late-game condition: after the first wall had been cleared, the stuck offset should apply only while the ball was still far from the paddle; when the ball got close, the offset should decay away, otherwise the final few bricks would pull the paddle off course. It also added a tiny paddle-drift compensation for the one-step delay between action and paddle position.
+The move from `839` to `864` felt most like tending a system that had already become complicated. Codex tried deadbands, serve offsets, stuck offsets, brick-balance bias, and lookahead steps. Many directions did not help. The useful change was a late-game condition: after the first wall had been cleared, the stuck offset should apply only while the ball was still far from the paddle; when the ball got close, the offset should decay away, otherwise the final bricks would pull the paddle off course. It also added a tiny paddle-drift compensation for the one-step delay between action and paddle position.
 
 ```python
 if score >= 432 and stuck_release_horizon_steps > 0:
@@ -95,13 +99,15 @@ elif score >= 432 and ball_y >= 170 and last_action == LEFT:
 
 <video controls src="heuristic_breakout_ci3985ae2_score864_render210x160.mp4" width="360"></video>
 
-The final RAM default configuration verified as `864 / 864 / 864` across three episodes. After that, Codex migrated the same geometric control back to pure image input: no RAM, only RGB segmentation for the paddle, ball, and brick balance. The pure-image version first reached `310`, then `428`, and finally `864` after lowering the late-game "decay the stuck offset" threshold so that it applied throughout the run. It first hit `864` after 7 policy-local episodes, corresponding to `14,504` policy-local environment steps in the figure.
+The final default RAM configuration verified as `864 / 864 / 864` across three episodes. After that, Codex migrated the same geometric control back to pure image input: no RAM, only RGB segmentation for the paddle, ball, and brick balance. The pure-image version first reached `310`, then `428`, and finally reached `864` after lowering the late-game "decay the stuck offset" threshold so that it applied throughout the run. It first hit `864` after 7 policy-local episodes, corresponding to `14,504` policy-local environment steps in the figure.
 
 ![Breakout sample efficiency](heuristic_breakout_sample_efficiency.png)
 
-This should not be described as "pure image reached the maximum score from scratch in 14.5K steps." The real story is that Codex first found geometric control, loop breaking, and late-stage offset decay in the RAM version. Once that structure stabilized, it swapped the state-reading layer from RAM to RGB detection. The pure-image `14.5K` is a transfer budget.
+This should not be described as "pure image reached the maximum score from scratch in 14.5K steps." The real sequence was: Codex first found geometric control, loop breaking, and late-stage offset decay in the RAM version; once that structure stabilized, it swapped the state-reading layer from RAM to RGB detection. The pure-image `14.5K` is a transfer budget.
 
-The score is only part of the signal. Once a heuristic policy is written as maintainable software, the input layer can be replaced, the control logic can be reused, and regression tests can keep running. It starts to feel like a small organ: the input layer can change, the control logic can stay, and failure modes can keep being absorbed.
+What matters here is not just the score. `864` is the visible outcome, but the thing that transferred was a control structure that had been tended over time. The state-reading layer can be replaced, the control logic keeps working, and failure records keep constraining the next edit. Once a heuristic policy is written as maintainable software, it crosses the boundary of a one-off rule.
+
+This was the first time I clearly felt that the agent was maintaining something larger than a policy. It had an input layer, a control layer, regression tests, failure history, and an entry point for the next update. It started to feel like a small software organ.
 
 The full policy is in [`heuristic_breakout.py`](heuristic_breakout.py), and the experiment ledger is in [`heuristic_breakout_trials_summary.csv`](heuristic_breakout_trials_summary.csv).
 
@@ -109,13 +115,13 @@ The full policy is in [`heuristic_breakout.py`](heuristic_breakout.py), and the 
 
 After Breakout, I realized that the thing Codex was maintaining had grown from a heuristic program into a **heuristic system**.
 
-By itself, "if the ball is on the left, move the paddle left" is a heuristic. What turns it into a system is the machinery around it: how to detect the ball and paddle, how to confirm action semantics, how to notice that the ball path is stuck, how to reproduce a `387` or `864` score, how to record why a change worked, and where the next iteration should pick up.
+By itself, "if the ball is on the left, move the paddle left" is only a heuristic. What turns it into a system is the machinery around it: how to detect the ball and paddle, how to confirm action semantics, how to notice that the ball path is stuck, how to reproduce a `387` or `864` score, how to record why a change worked, and where the next iteration should pick up.
 
-Feedback draws the boundary more clearly than rule count. A system that only executes fixed rules remains a heuristic program. Once historical results can rewrite the next state representation, action logic, evaluation method, or memory, it becomes the kind of heuristic system I mean here.
+The boundary is not rule count. It is whether feedback can enter the next run. A system that only executes fixed rules is still a heuristic program. Once historical results can rewrite the next state representation, action logic, evaluation method, or memory, it becomes the kind of heuristic system I mean here.
 
-This is what I mean when I say software starts to have metabolism. There is nothing mystical in the phrase, and I am not claiming that software has suddenly become alive. I mean a very plain engineering fact: feedback no longer has to stop at human postmortems. An agent can digest it into changes in code, configuration, tests, and memory.
+This is what I mean when I say software starts to have metabolism. The metaphor is simple: feedback no longer stops at human postmortems. An agent can digest it into changes in code, configuration, tests, and memory.
 
-The relationship I want to express is simple:
+The relationship I want to express is very plain:
 
 ![Air, food, and feedback: three metabolic inputs](ig_0c2dd0d2f07176560169faa8a1edd081968d1579bca5cba35f.png)
 
@@ -127,13 +133,15 @@ The loop is roughly:
 observation -> state representation -> program policy -> action -> feedback -> memory -> update
 ```
 
-A failing test can become a regression test. A log anomaly can become a new state detector. An experiment result can become a policy version. Human experience can become memory and the next patch. As long as these updates persist and affect the next run, the system starts absorbing feedback as it executes rules.
+A failing test can become a regression test. A log anomaly can become a new state detector. An experiment result can become a policy version. Human experience can become memory and the next patch. As long as these updates persist and affect the next run, the system starts absorbing feedback while it executes rules.
 
-Hold on to this intuition: the agent is tending a software system that grows more complex, keeps history, and remains editable. This will lead to another question later: there is an upper bound to the complexity an agent can maintain, and that bound depends on feedback, tests, modularity, and tool quality.
+In this view, tests, logs, replays, patches, and memory also change position. They move one step beyond engineering support and begin to look like the entry points through which software absorbs feedback: failures enter through them, and updates persist through them.
+
+Hold on to this intuition: the agent is tending a software system that grows more complex, keeps history, and remains editable. The hard question later will come from this: there is an upper bound to the complexity an agent can maintain, and that bound depends on feedback, tests, modularity, and tool quality.
 
 ## 3. Ant and HalfCheetah: Walking Without Training
 
-Ant surprised me even more. Breakout still has fairly intuitive geometry. Ant is continuous control: 8 joint actions, with failure modes that quickly become full-body dynamics rather than "the ball was missed."
+Ant surprised me even more. Breakout still has fairly intuitive geometry. Ant is continuous control: 8 joint actions, and the failure modes quickly become body dynamics rather than "the ball was missed."
 
 I did not start by saying "use CPG" or "use MPC." The request was only: do not train a neural network, make it reproducible locally, leave a record for every experiment, and keep improving the score. Codex first read the EnvPool/Gymnasium Ant observations and rewards, confirmed the action order, root velocity, torso orientation, joint positions, and joint velocities, and then proposed its first rhythmic gait.
 
@@ -184,7 +192,7 @@ plan[:-1] = PLAN_DECAY * best_plan[1:]
 return clip(base + best_plan[0], -1.0, 1.0)
 ```
 
-I did not plant these structures as strong priors. After the rhythmic policy reached `3162`, Codex wrote a model-based residual planner on its own. The first version, with horizon 6, 32 candidates, and small residuals, moved the score from `3135` to `3635`. Then it kept extending the controller:
+These structures grew through iteration. After the rhythmic policy reached `3162`, Codex wrote a model-based residual planner on its own. The first version, with horizon 6, 32 candidates, and small residuals, moved the score from `3135` to `3635`. Then it kept extending the controller:
 
 ```text
 trial_name                               score_mean   cumulative_env_steps   note
@@ -207,15 +215,17 @@ ant_mpc_default_adaptive_ep1            6146.2       106,300                adap
 
 The full experiment script is in [`heuristic_ant.py`](heuristic_ant.py), the extracted minimal policy is in [`heuristic_ant_min_policy.py`](heuristic_ant_min_policy.py), and the experiment ledger is in [`heuristic_ant_trials_summary.csv`](heuristic_ant_trials_summary.csv).
 
-Ant gives a different signal from Breakout. Breakout shows that once the geometry is found, regularized input can produce extreme sample efficiency. Ant shows that a heuristic system can grow more complex while staying inspectable, reproducible, and editable. By the end, the policy had oscillator phase, stance ratio, speed adaptation, roll/pitch/yaw feedback, foot contacts, short-horizon model rollouts, residual smoothing, terminal velocity cost, and warm-start plan decay. A human could certainly write one or two of those modules. Maintaining the experiment ledger, code, videos, and failed directions together in a short time is a very different level of difficulty.
+Ant gives a different signal from Breakout. Breakout shows that once the geometry is found, regularized input can produce extreme sample efficiency. Ant shows that complex policies can grow while staying inspectable, reproducible, and editable. By the end, the policy had oscillator phase, stance ratio, speed adaptation, roll/pitch/yaw feedback, foot contacts, short-horizon model rollouts, residual smoothing, terminal velocity cost, and warm-start plan decay. A human could certainly write one or two of those modules. Maintaining the experiment ledger, code, videos, and failed directions together in a short time is a very different level of difficulty.
+
+So `6146` is only the surface number. The more important thing is that the agent preserved history, rejected bad directions, and attached new control structure to an old system. Many software systems grow complexity in exactly this way: start with a local structure that works, then use feedback to attach new layers.
 
 HalfCheetah is another point in the same direction. I reran 5 episodes of `mpc-staged-tree-asym-pd-cpg`; seeds `100..104` produced mean `11836.7`, min `11735.0`, and max `12041.2`. The policy uses interpretable gait and posture rules plus online staged-tree MPC: first form a high-scoring gait with CPG/PD, then use short-horizon model scoring and a staged swing-amplitude schedule to correct actions. The script is [`heuristic_halfcheetah_v5.py`](heuristic_halfcheetah_v5.py), and the iteration log is [`heuristic_halfcheetah_v5_log.md`](heuristic_halfcheetah_v5_log.md).
 
-The point here is narrow. Continuous control does not need to move wholesale back to handwritten rules. But once an agent is willing to maintain a complex program policy over time, that policy does not immediately have to collapse into a mess. It can be modularized, recorded, regression-tested, and kept alive.
+I do not want to overstate this evidence. Continuous control is not going to move wholesale back to handwritten rules. But it does show something that used to be hard to imagine: a complex program policy can be modularized, recorded, regression-tested, and kept alive.
 
-## 4. Atari57: Policies Grew Without Supervision
+## 4. Atari57: Policies Can Grow Unattended
 
-Breakout and Ant are both single-task stories. Atari57 is a scale test: take the same Codex workflow, run it on the full Atari57 suite, use both `ram` and `native_obs` for each environment, and run 3 independent repeats for each input mode. In total:
+Breakout and Ant are single-task stories. With Atari57, I wanted to see what remained when the workflow left a single nice case. The setup was blunt: take the same Codex workflow, run it on the full Atari57 suite, use both `ram` and `native_obs` for each environment, and run 3 independent repeats for each input mode. In total:
 
 ```text
 57 games x 2 input modes x 3 runs = 342 coding-agent search trajectories
@@ -253,9 +263,9 @@ In the figure below, the x-axis starts at `10^4` environment steps because the e
 
 In the fully unattended batch run, `native_obs` reached `0.81` around `9.7M` steps, and `ram` reached `0.59`. In the same figure, the PPO2 / CleanRL EnvPool PPO median HNS curves saved by [OpenRL Benchmark](https://arxiv.org/abs/2402.03046) are roughly `0.88 / 0.92` at `10M` steps.
 
-This compares environment interaction efficiency. Total compute cost is larger: the coding agent also spends time reading logs, writing code, and inspecting videos.
+This compares environment interaction efficiency. The coding agent's time spent reading logs, writing code, and inspecting videos is not folded into the total compute cost.
 
-This comparison has a narrow reading. It supports one concrete signal: a rough coding-agent batch process, without inspecting intermediate results, can already push the Atari57 median into the neighborhood of those baselines. Claims like "heuristics have broadly beaten reinforcement learning" would go beyond what this figure shows.
+This figure should be read narrowly. It supports one concrete signal: a rough coding-agent batch workflow, without inspecting intermediate results, can already push the Atari57 median into the neighborhood of these baselines. It does not support the claim that heuristics have broadly beaten reinforcement learning.
 
 An aggregate curve compresses the distribution into one median, so I also plotted the 57 games individually. Raw Atari returns are not comparable across games, so the figure still uses each game's HNS. The dashed line at `1.0` marks human score.
 
@@ -263,11 +273,11 @@ An aggregate curve compresses the distribution into one median, so I also plotte
 
 The plot shows two things. First, there is overlap: in games such as Breakout, Krull, DoubleDunk, Boxing, and DemonAttack, both the heuristic and the reinforcement-learning baseline clearly exceed human score. Second, the differences are large: the heuristic is relatively stronger on Asterix, Jamesbond, Centipede, Bowling, Skiing, and Tennis; PPO is much stronger on Atlantis, VideoPinball, UpNDown, Assault, RoadRunner, and StarGunner.
 
-This distribution is more informative than one median. The heuristic system did not uniformly learn "how to play Atari." In some games it quickly wrote down an effective mechanism. In others, it still had not found the right state representation or long-term strategy.
+This distribution is more informative than one median. The heuristic system did not uniformly learn "how to play Atari." In some games it quickly wrote down an effective mechanism. In others, it got stuck on state representation, long-term strategy, or environment-interface details.
 
-What I find most interesting about Atari57 is that the source of sample efficiency changed. Traditional neural-network Atari learning has to relearn representation, credit assignment, and action semantics from high-dimensional input in every environment. Codex decomposes the environment into maintainable small software systems: aiming and dodging in shooters, bounces in paddle games, position rules in avoidance games, wrapper details, and each environment's own failed-experiment ledger. What remained at the end was a batch of generated, verified, and edited local heuristic policies. A general neural network never appeared in that process.
+What I find most interesting about Atari57 is that the source of sample efficiency changed. Traditional neural-network Atari learning has to relearn representation, credit assignment, and action semantics from high-dimensional input in every environment. Codex decomposes the environment into maintainable small software systems: aiming and dodging in shooters, bounces in paddle games, position rules in avoidance games, wrapper details, and each environment's own failed-experiment ledger. What remained at the end was a batch of generated, verified, and edited local heuristic policies. No general Atari policy network was trained in this process.
 
-By this point, the game scores are no longer the main thing. The more interesting fact is that this workflow can already generate, verify, and edit local policies in batches. Software now has a sufficiently general maintainer that can write feedback back into code, tests, logs, and memory.
+By this point, the game scores have moved into the background. The meaning of the `342` search trajectories is that the same workflow can already generate, verify, and edit local policies in batches; each environment leaves behind its own local mechanism, failure records, and reproducible policy. Software now has a sufficiently general maintainer that can write feedback back into code, tests, logs, and memory.
 
 ## 5. Counterexample: Montezuma
 
@@ -281,15 +291,15 @@ I included the recovered [policy](heuristic_montezuma_400_policy.py), [macro act
 
 Montezuma exposes an expressivity problem. The ordinary `policy.py` state-machine format struggles with this kind of route: actions need precise timing, failures need recovery, and intermediate states need to re-enter the plan. Some environments need composable macro-actions, recoverable search state, and perhaps a program structure better suited to long-horizon planning than ordinary `if else`.
 
-This kind of failure is valuable for a heuristic system. It tells us where the boundary is, and it suggests what the next abstraction might need to look like. A metabolic system still needs the right digestive structure; some feedback needs a new representation or a new program form before it can enter the system.
+This kind of failure is valuable for a heuristic system. It tells us where the boundary is, and it suggests what the next abstraction might need to look like. A metabolic system still needs the right digestive structure; some feedback needs a new representation or a new program form before it can enter the system. Montezuma points toward the next system interface: macro-actions, recoverable state, search, and long-term memory. The counterexample gives the concept a boundary.
 
 ## 6. Heuristic System: From Policy to System
 
-I used games because the feedback is clean and the scores are easy to measure. The case much closer to most readers is the code repository.
+I used games because the feedback is clean and the scores are easy to measure. Once we look away from games, the closest example for most readers is the code repository.
 
 ### 6.1 Definition
 
-At this point, "loop" is too vague. To move the idea from games into other software systems, I need to unfold the structure a little:
+At this point, "loop" is too vague. To move the idea from games into other software systems, we need to say what parts it has:
 
 ```text
 HS = (O, Z, P, A, R, M, U)
@@ -339,7 +349,7 @@ U / update      = coding agent edits check scripts, test strategy, docs, and cod
 
 In this view, a coding agent is doing much more than "help me write code." It is maintaining a repository's heuristic control system: which paths are risky, which tests are informative, which failures resemble historical problems, and which rules have gone stale.
 
-Software engineering has already prepared mature material for this kind of system. Unit tests, integration tests, golden cases, regression tests, lint, type checks, CI, and performance baselines are quality gates, and they also establish protocols for the codebase. A protocol says what a function promises to the outside world, which old bugs must not recur, where a library boundary sits, and which tests must run after certain paths change.
+This is also why a code repository is closer to everyday software than a game is. Software engineering has already prepared mature material for this kind of system: unit tests, integration tests, golden cases, regression tests, lint, type checks, CI, and performance baselines. These are quality checks, and they also establish protocols for the codebase. A protocol says what a function promises to the outside world, which old bugs must not recur, where a library boundary sits, and which tests must run after certain paths change.
 
 Once the protocol is complete enough, the internal implementation can be replaced more boldly. For example, as long as a parser continues to pass golden syntax cases and error-recovery tests, it matters less whether the inside is handwritten recursive descent, a parser generator, or a state machine refactored by an agent. What matters is whether the boundary covers downstream behavior.
 
@@ -356,7 +366,7 @@ Many rule layers used to be "not worth writing." The blocker was often maintenan
 
 ### 6.3 Software That Already Lives on Heuristics
 
-The more typical examples are software systems where the global optimum is too expensive to find cheaply.
+Outside code repositories, there is another large class of systems that already live on heuristics: systems where the global optimum is too expensive to find cheaply.
 
 Scheduling systems are like this. Cluster scheduling, job queues, GPU allocation, and Kubernetes placement all have to trade off priority, fairness, data locality, preemption, cold start, retry behavior, and tail latency. Combinatorial optimization is similar: vehicle routing, bin packing, rostering, warehouse picking, and ad-budget allocation all have exploding search spaces, so the final system inevitably grows greedy rules, local search, beam search, repair heuristics, and pruning rules.
 
@@ -443,9 +453,9 @@ These limits put the idea back where it actually applies. For software to have m
 
 ## 8. Conclusion
 
-This article started from a small testing need: can we write cheap, reproducible policies that are much stronger than random, so environments can be driven into informative states? By the end, the scores have moved into the background. The more important point is that when a coding agent can continuously read failures, edit code, add tests, write records, and run regressions, a heuristic policy can become a software system that can be maintained over time.
+This article started from a small testing need: can we write cheap, reproducible policies that are much stronger than random, so environments can be driven into informative states? By the end, the scores have moved into the background. What remains is another way to look at software: when a coding agent can continuously read failures, edit code, add tests, write records, and run regressions, a heuristic policy can become a software system that can be cared for.
 
-Breakout gives the clearest starting point. The path `387 -> 507 -> 839 -> 864` came from a loop that kept absorbing failures: action semantics, state detection, stuck ball paths, low fast balls, late-game offset release, paddle-drift compensation. Each step was pinned down by video, logs, and regression tests. Ant and HalfCheetah show that complexity can also be maintained. Atari57 shows that the workflow can run in batch. Montezuma reminds us that long-horizon timing and recoverable state quickly raise coupling complexity.
+Breakout gives the clearest starting point. The path `387 -> 507 -> 839 -> 864` came from an experiment loop that kept absorbing failures: action semantics, state detection, stuck ball paths, low fast balls, late-game offset release, paddle-drift compensation. Each step was pinned down by video, logs, and regression tests. Ant and HalfCheetah show that complexity can also be maintained. Atari57 shows that the workflow can run in batch. Montezuma reminds us that long-horizon timing and recoverable state quickly raise coupling complexity.
 
 The judgment this article wants to preserve is: many heuristics looked hopeless because the maintenance cost was too high. Nobody wanted to care for hundreds of local rules, failure records, test boundaries, and state representations over the long run. Coding agents change that maintenance-cost curve. Rules, tests, logs, memory, and patches used to be scattered engineering materials. Now they can start to form a heuristic system that keeps updating.
 
