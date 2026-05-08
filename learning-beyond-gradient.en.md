@@ -1,6 +1,6 @@
 # Learning Beyond Gradients
 
-> Jiayi Weng
+> [Jiayi Weng](https://trinkle23897.github.io/cv/)
 
 Continual Learning has remained hard largely because of catastrophic forgetting in neural networks: learn something new, and old capabilities can get overwritten. But what if we do not put all of our attention on neural network weights? Is there another way to make progress?
 

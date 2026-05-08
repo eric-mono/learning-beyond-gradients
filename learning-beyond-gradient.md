@@ -1,6 +1,6 @@
 # Learning Beyond Gradients
 
-> Jiayi Weng
+> [Jiayi Weng](https://trinkle23897.github.io/cv/)
 
 Continual Learning 一直难以被解决，主要卡在神经网络的灾难性遗忘：学了新东西，旧能力就容易被冲掉。那如果不把目光只放在神经网络权重上，还有没有其他解决方案？
 
