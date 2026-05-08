@@ -7,10 +7,10 @@ import markdown
 
 
 ROOT = Path(__file__).resolve().parent
-EN_MD = ROOT / "blog_heuristic_system.en.md"
-ZH_MD = ROOT / "blog_heuristic_system.md"
-HTML_PATH = ROOT / "blog_heuristic_system.html"
-PAGE_TITLE_EN = "Heuristic System: Software Evolves Through Metabolism"
+EN_MD = ROOT / "learning-beyond-gradient.en.md"
+ZH_MD = ROOT / "learning-beyond-gradient.md"
+HTML_PATH = ROOT / "learning-beyond-gradient.html"
+PAGE_TITLE_EN = "Learning Beyond Gradients"
 
 
 STYLE = """:root {
@@ -149,10 +149,10 @@ LANG_SCRIPT = """(function () {
     zh: document.getElementById('lang-zh'),
   };
   const titles = {
-    en: 'Heuristic System: Software Evolves Through Metabolism',
-    zh: 'Heuristic System：软件在代谢中进化',
+    en: 'Learning Beyond Gradients',
+    zh: 'Learning Beyond Gradients',
   };
-  const storageKey = 'heuristic_system_blog_lang_v1';
+  const storageKey = 'learning_beyond_gradient_lang_v1';
 
   function setLanguage(lang, updateUrl) {
     if (!panes[lang]) lang = 'en';

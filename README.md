@@ -1,27 +1,27 @@
-# Heuristic System Blog Artifacts
+# Learning Beyond Gradients Blog Artifacts
 
 This repository contains the public artifacts for:
 
-**Heuristic System: Software Evolves Through Metabolism**
+**Learning Beyond Gradients**
 
 Published article:
 
-- https://trinkle23897.github.io/heuristic-system/
+- https://trinkle23897.github.io/learning-beyond-gradients/
 
 Artifact repository:
 
-- https://github.com/Trinkle23897/heuristic-system
+- https://github.com/Trinkle23897/learning-beyond-gradients
 
 The article is bilingual. The rendered HTML defaults to English and includes a Chinese switcher.
 
 ## Source Files
 
-- `blog_heuristic_system.en.md`: English article source.
-- `blog_heuristic_system.md`: Chinese article source.
-- `blog_heuristic_system.html`: rendered bilingual HTML.
-- `render_heuristic_system_blog.py`: local renderer.
+- `learning-beyond-gradient.en.md`: English article source.
+- `learning-beyond-gradient.md`: Chinese article source.
+- `learning-beyond-gradient.html`: rendered bilingual HTML.
+- `render_learning_beyond_gradient.py`: local renderer.
 
-Older draft blog files have been removed; this repository now tracks only the current heuristic-system essay and its artifacts.
+Older draft blog files are kept only as local history/context; the deployed article is `learning-beyond-gradient.html`.
 
 ## Local Preview
 
@@ -34,7 +34,7 @@ python3 -m http.server 8000
 Then open:
 
 ```text
-http://127.0.0.1:8000/blog_heuristic_system.html
+http://127.0.0.1:8000/learning-beyond-gradient.html
 ```
 
 Opening the HTML file directly also works in most browsers, but using `http.server` is closer to how the page is served.
@@ -50,10 +50,10 @@ python3 -m pip install -r requirements.txt
 Then run:
 
 ```bash
-python3 render_heuristic_system_blog.py
+python3 render_learning_beyond_gradient.py
 ```
 
-The renderer reads the English and Chinese Markdown files and rewrites `blog_heuristic_system.html` in place.
+The renderer reads the English and Chinese Markdown files and rewrites `learning-beyond-gradient.html` in place.
 
 ## GitHub Pages
 
@@ -61,7 +61,7 @@ The site is deployed by `.github/workflows/deploy-pages.yml` on every push to `m
 
 The workflow does not publish the whole repository as the website root. It builds a small `_site` directory containing:
 
-- `index.html`, copied from `blog_heuristic_system.html`.
+- `index.html`, copied from `learning-beyond-gradient.html`.
 - `.nojekyll`.
 - Local files referenced by the article through `src` or `href`, such as figures, videos, scripts, CSVs, and prompt files.
 
@@ -118,12 +118,12 @@ python3 heuristic_montezuma_400_policy.py \
 ## Citation
 
 ```bibtex
-@misc{weng2026heuristic_system,
-  title = {Heuristic System: Software Evolves Through Metabolism},
+@misc{weng2026learning_beyond_gradients,
+  title = {Learning Beyond Gradients},
   author = {Weng, Jiayi},
   year = {2026},
   month = may,
-  howpublished = {\url{https://trinkle23897.github.io/heuristic-system/}},
+  howpublished = {\url{https://trinkle23897.github.io/learning-beyond-gradients/}},
   note = {Blog post}
 }
 ```

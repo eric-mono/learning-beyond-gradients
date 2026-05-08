@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -133,7 +133,365 @@ th { background: #f1f5f9; }
 </head>
 <body>
   <main class="page">
-    <article lang="zh-CN">
+    <div class="lang-switch-wrap" aria-label="Language switcher">
+      <div class="lang-switch">
+        <button type="button" id="lang-en" class="active" aria-pressed="true">English</button>
+        <button type="button" id="lang-zh" aria-pressed="false">中文</button>
+      </div>
+    </div>
+    <article id="article-en" class="lang-pane" lang="en">
+<h1>Learning Beyond Gradients</h1>
+<blockquote>
+<p>Jiayi Weng</p>
+</blockquote>
+<nav class="toc" aria-label="Contents">
+    <div class="toc-title">Contents</div>
+    <ol>
+      <li class="toc-level-2"><a href="#en-section-1">The Anomaly</a></li>
+      <li class="toc-level-2"><a href="#en-section-2">Heuristic Learning</a></li>
+      <li class="toc-level-2"><a href="#en-section-3">Why Heuristic Learning Did Not Take Off Earlier</a></li>
+      <li class="toc-level-2"><a href="#en-section-4">How Heuristic Learning Does Continual Learning</a></li>
+      <li class="toc-level-2"><a href="#en-section-5">The Complexity of Heuristic Systems</a></li>
+      <li class="toc-level-2"><a href="#en-section-6">The Next Paradigm?</a></li>
+      <li class="toc-level-2"><a href="#en-disclaimer">Disclaimer</a></li>
+      <li class="toc-level-2"><a href="#en-acknowledgements">Acknowledgements</a></li>
+      <li class="toc-level-2"><a href="#en-citation">Citation</a></li>
+      <li class="toc-level-2"><a href="#en-appendix">Appendix: Experiment Notes and Reproduction</a></li>
+      <li class="toc-level-3"><a href="#en-section-a-1">A.1 Experiment Notes</a></li>
+      <li class="toc-level-3"><a href="#en-section-a-2">A.2 Reproduction Entrypoints</a></li>
+    </ol>
+  </nav>
+<p>Continual Learning has remained hard largely because of catastrophic forgetting in neural networks: learn something new, and old capabilities can get overwritten. But what if we do not put all of our attention on neural network weights? Is there another way to make progress?</p>
+<p>As LLM agents get stronger, coding gets faster and better. But the phenomenon I find more interesting is different: a coding agent can keep reading failures, editing code, adding tests, and watching replays, and a program system can improve without training a new network or updating weights.</p>
+<p>That made me rethink heuristics: hand-written rules and programmatic policies. Many heuristics were not useless; they were simply too expensive to maintain. Coding agents change that maintenance curve. Rules that used to be one-off patches may start to become code worth owning for the long term.</p>
+<p>Anything that can be iterated on continuously starts to become more solvable. That is also what Continual Learning has always wanted. Could this become the next paradigm after pretraining, RLHF, and large-scale RL/RLVR?</p>
+<h2 id="en-section-1">The Anomaly</h2>
+<p>While maintaining <a href="https://github.com/sail-sg/envpool">EnvPool</a> in my spare time, I wanted a cheaper way to test whether game environments were behaving correctly. Running a neural network every time was too expensive for CI.</p>
+<p>The initial question was:</p>
+<pre><code class="language-text">Can we write cheap, reproducible heuristics that are much stronger than a random policy,
+and use them to drive environments into informative states?
+</code></pre>
+<p>I tried using Codex (<code>gpt-5.4</code>) to write a rule-based version, with no neural network at all. After a few rounds, the results were far more surprising than I expected:</p>
+<ul>
+<li>In Atari Breakout, a programmatic policy went from <code>387 -&gt; 507 -&gt; 839 -&gt; 864</code>, eventually reaching the theoretical maximum score.</li>
+<li>In MuJoCo Ant, a pure Python policy first learned a rhythmic gait, then added short-horizon model planning, and finally reached <code>6000+</code>, in the range of common RL SOTA results.</li>
+<li>In MuJoCo HalfCheetah, interpretable gait/posture rules plus online planning reached a five-episode evaluation mean of <code>11836.7</code>, also in the range of RL SOTA.</li>
+<li>Across Atari57, I ran <code>57 games x 2 observation modes x 3 repeats = 342</code> coding-agent search trajectories. The results were uneven, but under a fixed environment-step budget, median HNS around <code>1M</code> environment steps was already far above PPO-style RL baselines at the same step count.</li>
+</ul>
+<p>The raw scores were surprising enough. But the more interesting part was: Codex was not training a neural network. It was maintaining a software system that could keep growing.</p>
+<p>Breakout policy was far beyond "move left when the ball is on the left." The policy had grown action probes, state readers, ball and paddle detectors, landing prediction, stuck-loop detection, regression tests, video replays, and experiment logs. Ant policy was more than a gait formula too: it had rhythmic control, posture feedback, contact signals, and short-horizon model rollouts.</p>
+<p>That is when I felt a new concept was needed. The thing being updated was no longer just a policy function. It was a software system with memory, feedback channels, and regression mechanisms.</p>
+<h2 id="en-section-2">Heuristic Learning</h2>
+<p>After more iteration with Codex, I started calling this process <strong>Heuristic Learning (HL)</strong>:</p>
+<ul>
+<li>HL is built out of program code.</li>
+<li>Like RL, it has a loop of state, action, feedback, and update; unlike RL, the object being updated is software structure rather than (neural network) parameters.</li>
+<li>Its feedback is consumed by a coding agent, and can come from environment reward, test cases, logs, videos, replays, or human feedback.</li>
+<li>Its updates do not use backpropagation. The coding agent directly edits policies, state detectors, tests, configuration, or memory.</li>
+<li>HL is the learning and update process. The object maintained by HL over time can be called a <strong>Heuristic System (HS)</strong>.</li>
+<li>An HS is more than an isolated <code>policy.py</code>. It contains at least a programmatic policy, state representation, feedback channels, experiment records, replays or tests, memory, and an update mechanism executed by a coding agent. A single rule is not enough. Rules, feedback, history, and the next update path all need to connect before it becomes an HS.</li>
+</ul>
+<p>As a table:</p>
+<table>
+<thead>
+<tr>
+<th>Axis</th>
+<th>Deep RL</th>
+<th>HL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Policy</td>
+<td>Neural network parameters</td>
+<td>Code: rules, state machines, controllers, MPC, macro-actions</td>
+</tr>
+<tr>
+<td>State</td>
+<td>Usually explicit observations</td>
+<td>Usually explicit variables, detectors, caches, and other readable representations</td>
+</tr>
+<tr>
+<td>Action</td>
+<td>Produced by a neural network forward pass</td>
+<td>Produced by executing code logic</td>
+</tr>
+<tr>
+<td>Feedback</td>
+<td>Mainly fixed reward</td>
+<td>Provided through coding-agent context: tests, environment feedback, logs, and replays all count</td>
+</tr>
+<tr>
+<td>Update</td>
+<td>Gradient propagation through an RL algorithm</td>
+<td>Direct code edits by a coding agent</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>On-policy methods basically have none; off-policy methods have replay buffers</td>
+<td>Can explicitly store trials, summaries, failure reasons, replays, and version diffs</td>
+</tr>
+</tbody>
+</table>
+<p>Heuristic Learning has several useful properties compared with Deep RL:</p>
+<ul>
+<li>Explainability: neural networks are hard to explain, while HL policies can often be translated into plain language.</li>
+<li>Sample Efficiency: one effective code update can jump directly to a new policy, rather than slowly climbing through learning-rate tuning.</li>
+<li>Regression-testability: old capabilities can become tests, replays, or golden cases.</li>
+<li>Overfitting can be constrained: code heuristics can still overfit to seeds, environment details, or test loopholes, but simplification, regression checks, and multi-seed evaluation provide an engineering form of regularization.</li>
+<li>It can avoid part of catastrophic forgetting: old capabilities do not have to live only inside model weights; they can be written into rule sets and tests.</li>
+</ul>
+<p>The point is that a class of heuristics that used to be too expensive to maintain may now be worth owning.</p>
+<h2 id="en-section-3">Why Heuristic Learning Did Not Take Off Earlier</h2>
+<p>If HL has ancestors, they are expert systems and rule systems. Before coding agents, their maintenance cost was brutal.</p>
+<p>Human-maintained heuristics easily turn into this:</p>
+<pre><code class="language-text">Add one rule today to fix case A.
+Tomorrow, case B breaks.
+Add another if-statement the day after.
+The day after that, nobody dares delete anything.
+</code></pre>
+<p>The problem was not that heuristics were useless. The problem was that humans could not afford to keep maintaining them. Maintaining expert systems by hand was a bit like spinning thread before the Industrial Revolution: one person can do it, but once the scale grows, stability and maintenance cost become crushing. Spinning machines changed the production curve; coding agents change the maintenance curve for heuristics. They act like a channel that can continuously deliver intelligence into a Heuristic System and let it keep evolving.</p>
+<p><img alt="coding agent connects feedback into software growth" src="ig_0c2dd0d2f07176560169fbc256930481969d3c6ba3316d5486.png"></p>
+<p>The common agentic feedback loop today looks roughly like this:</p>
+<pre><code class="language-text">feature request -&gt; agent writes code -&gt; tests pass -&gt; human gives some feedback -&gt; next patch
+</code></pre>
+<p>As models improve, human intervention should shrink. In systems with clear boundaries, this feedback loop can start to close automatically, allowing HL to produce Heuristic Systems in bulk:</p>
+<pre><code class="language-text">environment feedback / test failure / log anomaly
+-&gt; coding agent reads context
+-&gt; edits policy / test / memory
+-&gt; reruns
+-&gt; writes results back into trials and summaries
+-&gt; continues to the next round
+</code></pre>
+<h2 id="en-section-4">How Heuristic Learning Does Continual Learning</h2>
+<p>In neural networks, catastrophic forgetting happens when new data pushes parameters toward a new task and old capabilities get overwritten. HL can forget too, just in a more engineering-shaped way:</p>
+<ul>
+<li>A new rule fixes one failure mode and breaks an old scenario.</li>
+<li>A new memory repeatedly steers the agent in the wrong direction.</li>
+<li>A test is too narrow, so the policy learns to exploit it.</li>
+<li>A patch changes a shared interface, and old callers quietly break.</li>
+<li>Rules keep piling up until even the agent can no longer maintain the system.</li>
+</ul>
+<p>So HL does not automatically solve Continual Learning. It turns "avoiding forgetting" into a more engineering-oriented problem.</p>
+<p>In HL, old capabilities can be fixed into:</p>
+<ul>
+<li>regression tests;</li>
+<li>fixed-seed replays;</li>
+<li>golden traces;</li>
+<li>failure videos;</li>
+<li>version diffs;</li>
+<li>explicitly written-down failed directions.</li>
+</ul>
+<p>This is very different from compressing experience into neural network weights. HL history is explicit, readable, deletable, and refactorable. It is responsible for remembering, but also for compressing a pile of local patches into a simpler representation.</p>
+<p>(An HS that only grows and never compresses will eventually become a big ball of mud. It may "remember" many things, but the form of memory is so poor that nobody dares touch it, and the system decays.)</p>
+<p>A healthy HS therefore needs at least two operations:</p>
+<ol>
+<li>Absorb feedback: write new failures, logs, and rewards back into the system.</li>
+<li>Compress history: fold local patches back into simpler, more maintainable representations.</li>
+</ol>
+<p>That turns Continual Learning from "how do we update parameters?" into "how do we maintain a software system that keeps absorbing feedback?"</p>
+<h2 id="en-section-5">The Complexity of Heuristic Systems</h2>
+<p>Here I define <strong>coupling complexity</strong> as the level of strategy complexity a coding agent can maintain in order to support HL. More concretely, it is how many interdependent states, rules, tests, feedback signals, and historical constraints an update has to account for at the same time.</p>
+<p>This cannot be measured by lines of code. A 500-line policy with clean module boundaries, good tests, reproducible state, and clear logs may be easy to maintain. An 80-line policy where every line affects every other line, with no logs or replays, may be a time bomb.</p>
+<p>On the code side, coupling complexity is bounded by module boundaries, interface stability, test coverage, observability, rollback cost, and state reproducibility. Good modularity cuts global coupling into local coupling, reducing the complexity an agent must hold in its head. Good tests let the coding agent avoid simulating the whole system mentally on every change.</p>
+<p>On the coding-agent side, coupling complexity depends on model capability, context length, memory quality, tool quality, and iteration speed. A stronger model can handle more interactions at once. Longer context means fewer lost threads. Memory preserves experience across rounds. Search, localization, execution, and replay tools move part of the cognitive load outside the model.</p>
+<p>Putting the two sides together gives a few working hypotheses:</p>
+<ul>
+<li>Clearer feedback increases the coupling complexity that a fixed amount of agent intelligence can maintain.</li>
+<li>With the same tools and feedback, stronger models can handle higher coupling complexity.</li>
+<li>Modularity, tests, and replays move part of the coupling complexity into the environment.</li>
+<li>Memory and tools increase the agent's effective context.</li>
+<li>An HS that only grows and never compresses will keep increasing coupling complexity until it exceeds maintenance capacity.</li>
+</ul>
+<p>Breakout policy reaching the full <code>864</code> score is partly because the rules are simple, but also because failures can be replayed on video, locally reproduced, and regression-tested. Ant is much more complex, but it decomposes into rhythm, posture, contact, and residual MPC modules.</p>
+<p>Montezuma is a useful counterexample. In Atari57, one unattended run reached <code>400</code> points, but the route consisted of <code>86</code> macro-actions and was basically open-loop execution. That example shows that some environments need stronger program forms: composable macro-actions, recoverable search state, and long-term memory. Plain <code>if else</code> cannot solve everything.</p>
+<h2 id="en-section-6">The Next Paradigm?</h2>
+<p>The current paradigm shift has gone from pretraining to RLHF, and then to large-scale RL / RLVR. Anything that can be verified starts to become solvable.</p>
+<p>Online Learning and Continual Learning can be partially addressed by agents produced by RLVR, through Heuristic Learning. From that perspective, I would call it a candidate for the next paradigm: anything that can be continuously iterated on starts to become solvable.</p>
+<p>Why only partially? Because Heuristic Learning cannot do everything neural networks can do. It is bounded by what code can express, especially in complex perception and long-horizon generalization. With what I know today, I cannot imagine an agent writing pure Python code, without a neural network, to solve ImageNet.</p>
+<p>The real question is how to combine neural networks and HL to address Online Learning and Continual Learning together. The most promising direction seems to be: use HL to process online data quickly, turn online experience into trainable, regression-testable, filterable data, and then periodically update the neural network.</p>
+<p>Take robotics as an example. If we borrow the System 1 / System 2 language, one possible division of labor is:</p>
+<ul>
+<li>Specialized shallow NNs: part of System 1, fast and cheap, responsible for perception, classification, and object-state estimation.</li>
+<li>HL: also part of System 1, responsible for fresh data handling, rules, tests, replays, memory, safety boundaries, and local recovery.</li>
+<li>LLM agent: System 2, responsible for giving feedback to HL, improving data, and periodically extracting HL-generated data to update itself.</li>
+</ul>
+<p>This can be further decomposed into a hierarchy:</p>
+<pre><code class="language-text">joint-level HL -&gt; limb-level HL -&gt; whole-body balance HL -&gt; task-level HL
+</code></pre>
+<p>Lower levels handle safety and low-latency control. Middle levels handle gait and contact. Higher levels handle tasks, recovery, and long-term memory. The coding agent does not necessarily "understand walking" directly. It is more like an update pipeline inserted into the system: continuously feeding failure videos, sensor streams, simulation results, and test results into the system, then rewriting the feedback into code, parameters, guard rules, and memory.</p>
+<p>LLM agents can share what they learn, or they can learn inside robotics in isolated branches. The open problem is how the <em>specific data distribution</em> produced by HL can avoid destabilizing the LLM's periodic updates. This is a classic post-training problem, and there is already a lot of mature experience here. For reasons, I will not expand on it in this post.</p>
+<p>Agentic coding changes the speed of writing code. It also changes which code is worth owning for the long term.</p>
+<p>Many heuristics looked hopeless because the real issue was maintenance cost. They were not necessarily too weak. Coding agents change that maintenance curve. Rules, tests, logs, memory, and patches used to be scattered engineering materials. Now they can become a continuously updated Heuristic System, one that can genuinely address problems Online Learning and Continual Learning have struggled to solve.</p>
+<p>Welcome to the next paradigm.</p>
+<h2 id="en-disclaimer">Disclaimer</h2>
+<p>This article represents only my personal views. It does not represent any company position, and the discussion here is unrelated to any specific company project, product plan, or internal work.</p>
+<h2 id="en-acknowledgements">Acknowledgements</h2>
+<p>Thanks to <a href="https://costa.sh/">Costa Huang</a> and <a href="https://tairanhe.com/">Tairan He</a> for feedback.</p>
+<h2 id="en-citation">Citation</h2>
+<p>If you need to cite this article in LaTeX, you can use the BibTeX below.</p>
+<pre><code class="language-bibtex">@misc{weng2026learning_beyond_gradients,
+  title = {Learning Beyond Gradients},
+  author = {Weng, Jiayi},
+  year = {2026},
+  month = may,
+  howpublished = {\url{https://trinkle23897.github.io/learning-beyond-gradients/}},
+  note = {Blog post}
+}
+</code></pre>
+<h2 id="en-appendix">Appendix: Experiment Notes and Reproduction</h2>
+<p>The full artifact repository is <a href="https://github.com/Trinkle23897/learning-beyond-gradients">https://github.com/Trinkle23897/learning-beyond-gradients</a>. The commands below assume you have cloned that repo and are running them from the repository root. The GitHub Pages site only serves the article and the static files it references; the full scripts, CSVs, videos, and experiment artifacts live in the repo.</p>
+<p>The Codex model used in the experiments below was <code>gpt-5.4</code>; newer model versions have not been tested yet. The experiment reports below were written by Codex itself.</p>
+<h3 id="en-section-a-1">A.1 Experiment Notes</h3>
+<p>At first I simply asked Codex: "Write a strategy that solves Breakout." The result was mediocre. A low score is not very informative: the action semantics could be wrong, the state detector could be wrong, the evaluation setup could be wrong, or the policy structure itself could be weak. Later I changed the task shape: do not just hand me a <code>policy.py</code>; maintain a complete loop.</p>
+<p>The loop looked roughly like this:</p>
+<pre><code class="language-text">probe actions and observations
+-&gt; write state detectors
+-&gt; write policy
+-&gt; run full episodes
+-&gt; record trials.jsonl and summary.csv
+-&gt; generate videos or curves
+-&gt; inspect failure modes
+-&gt; edit policy
+-&gt; simplify code and run regressions
+</code></pre>
+<p>At that point, the task had changed shape. The output was no longer just a policy file. It was an experimental system that could keep being modified. It had probes, records, replays, failure modes, and clues for the next round.</p>
+<h4>Breakout</h4>
+<p>Breakout looks like a geometry problem: where is the ball, where is the paddle, and where will the ball land after bouncing off the wall? The hard part comes later. The policy can keep returning the ball, but stop hitting new bricks, trapping the score in a stable loop.</p>
+<p>In the first round, Codex confirmed the action space and observation shape, then found the paddle, ball, and brick colors from RGB frames, and used those image labels to scan 128 RAM bytes. Early experiment records looked like this:</p>
+<pre><code class="language-text">trial_name                 score   cumulative_env_steps   note
+shape_action_probe          -      32                     inspect obs/info/action
+ram_byte_corr_probe_v1      -      5,032                  correlate RAM bytes
+ram_fit_action_probe_v2     -      9,532                  action 2=right, 3=left
+baseline_v0                99      16,303                 initial RAM intercept
+tunnel0_v1                387      43,303                 no tunnel offset
+</code></pre>
+<p><code>387</code> is the kind of local high score that can fool you. The policy was already good at returning the ball, but it sent the ball into a periodic route: it would not die, but it would not clear more bricks either. A human writing by hand might keep tuning "return accuracy." Codex inspected the video and the last few dozen steps of trace, then localized the issue to a lack of perturbation in the ball trajectory.</p>
+<video controls src="heuristic_breakout_score387_tunnel0_render210x160.mp4" width="360"></video>
+
+<p>The first effective mechanism was loop breaking: if there had been no reward for a long time, periodically add an offset to the predicted landing point and knock the ball out of the local cycle. That moved the score from <code>387</code> to <code>507</code>.</p>
+<p>Then another failure mode appeared. For a fast low ball, chasing the ordinary intercept made the paddle over-lead and drift away. Codex added <code>fast_low_ball_lead_steps=3</code>, and the score jumped from <code>507</code> to <code>839</code>.</p>
+<p>The move from <code>839</code> to <code>864</code> was more like caring for a system that had already become complex. Codex tried deadbands, serve offsets, stuck offsets, brick-balance bias, and lookahead steps. Many directions did nothing. The final useful change was a late-game condition: after the first wall of bricks, the stuck offset only applies when the ball is still far from the paddle; when the ball is close, the offset is gradually released, otherwise the last few bricks pull the paddle away. It also added a tiny paddle-drift compensation for the one-step delay between action and paddle position.</p>
+<video controls src="heuristic_breakout_ci3985ae2_score864_render210x160.mp4" width="360"></video>
+
+<p>The final RAM default configuration verified at <code>864 / 864 / 864</code> across three episodes. Later, Codex migrated the same geometry controller back to pure image input: no RAM, only RGB segmentation for paddle, ball, and brick balance. The image-only version first scored <code>310</code>, then <code>428</code>, and finally reached <code>864</code> for the first time after seven local policy episodes, corresponding to <code>14,504</code> local policy environment steps, after lowering the threshold for the late-game "release stuck offset" behavior so it applied throughout.</p>
+<p><img alt="Breakout sample efficiency" src="heuristic_breakout_sample_efficiency.png"></p>
+<p>This should not be described as "image-only from scratch to max score in 14.5K steps." The real process was that Codex first discovered the geometry controller, loop breaker, and late-game offset release in the RAM version. Once the structure was stable, it swapped the state-reading layer from RAM to RGB detectors. The <code>14.5K</code> number is the transfer budget for the image-only version.</p>
+<h4>Ant and HalfCheetah</h4>
+<p>Ant gives a different signal from Breakout. Breakout has intuitive geometry. Ant is continuous control, with 8 joint actions, and its failures are body dynamics rather than "missed the ball."</p>
+<p>I did not specify "use CPG" or "use MPC" at the beginning. The constraints were simply: do not train a neural network, make it locally reproducible, leave records for each round, and keep pushing the score up. Codex first read the EnvPool/Gymnasium Ant observations and rewards, confirmed action order, root velocity, torso orientation, joint positions, and joint velocities, then proposed the first rhythmic gait on its own.</p>
+<p>The first version was a four-leg phase oscillator: left and right legs in opposite phase, hip and ankle joints tracking sinusoidal target angles, with actions produced by a PD controller. It was not elegant, but it was already much stronger than random: the mean score over five random seeds was <code>2291</code>.</p>
+<p>The early iterations looked like tuning a real controller: add yaw feedback to reach <code>2718</code>, retune phase speed, hip/ankle amplitude, and yaw angular-velocity gain to reach <code>3025</code>, then add second/third harmonics to reach <code>3162</code>. Codex also tried broad parameter search, but it did not reliably beat the current rhythmic policy, so it stopped expanding the search budget and moved to a different representation.</p>
+<p>The jump came from residual MPC. Roughly speaking, MPC is "think a short distance into the future while walking." Keep the rhythmic gait as the base reflex; at each real environment step, sample dozens of small residual action sequences inside a local MuJoCo model, score them, execute only the first residual action, then reobserve and replan on the next step, using the unfinished previous plan as a warm start.</p>
+<p>This way, the policy does not plan all 8 joints from scratch at every step. It starts with a stable gait, then uses short-horizon model planning to correct it.</p>
+<pre><code class="language-text">trial_name                               score_mean   cumulative_env_steps   note
+ant_lr_cpgpd_v1                         2291.9       5,000                  left/right anti-phase CPG + PD
+ant_yawaxis_grid_v2                     2857.9       20,000                 yaw feedback + retuned params
+ant_h3_428_v1                           3162.0       50,000                 second/third harmonics
+ant_mpc_residual_v1_ep1                 3635.5       62,000                 horizon=6, candidates=32
+ant_mpc_residual_cfg4_eval5             3964.7       67,000                 horizon=8, candidates=48
+ant_mpc_residual_cand07_eval5           4647.1       73,000                 local search around MPC config
+ant_mpc_residual_narrow04_eval5         4871.3       79,000                 lower z target, larger kp/candidate count
+ant_mpc_residual_warm02_eval5           5165.2       85,000                 warm-start residual plan
+ant_mpc_fast065x060_sigma008_clip012    5759.4       95,000                 faster gait + larger residual
+ant_mpc_term001_ep1                     6054.5       100,000                terminal velocity cost
+ant_mpc_default_adaptive_ep1            6146.2       106,300                speed-adaptive phase + stance
+</code></pre>
+<p>By the end, the policy had oscillator phase, stance ratio, speed adaptation, roll/pitch/yaw feedback, foot contact, short-horizon model rollouts, residual smoothing, terminal velocity cost, and warm-start plan decay. A human can write one or two of these modules, of course. But handling experiment records, code, videos, and failure directions at the same time, under a short iteration budget, is a different level of difficulty.</p>
+<p><img alt="Ant sample efficiency" src="heuristic_ant_sample_efficiency.png"></p>
+<video controls src="heuristic_ant_mpc_default_6146_render480.mp4" width="480"></video>
+
+<p>HalfCheetah is another point of evidence in the same family. I reran a five-episode evaluation of <code>mpc-staged-tree-asym-pd-cpg</code> with seeds <code>100..104</code>; the mean was <code>11836.7</code>, with min <code>11735.0</code> and max <code>12041.2</code>. The policy uses interpretable gait/posture rules and online staged-tree MPC: first form a high-scoring gait through CPG/PD, then use short-horizon model scoring and a staged swing-amplitude schedule to adjust actions.</p>
+<p><img alt="HalfCheetah sample efficiency" src="heuristic_halfcheetah_sample_efficiency.png"></p>
+<h4>Atari57</h4>
+<p>Breakout and Ant are single-point stories. Atari57 asks what remains when the workflow leaves a few pretty examples. The setup was direct: run the same Codex workflow over the full Atari57 suite, with both <code>ram</code> and <code>native_obs</code> observation modes for every environment, and three independent repeats for each mode:</p>
+<pre><code class="language-text">57 games x 2 observation modes x 3 repeats = 342 coding-agent search trajectories
+</code></pre>
+<p>No human gave step-by-step hints during this batch. Each agent received the same template and different <code>ENV_ID / OBS_MODE / REPEAT_INDEX</code>, then ran until it stopped. Each run had to write <code>policy.py</code>, <code>trials.jsonl</code>, <code>summary.csv</code>, <code>sample_efficiency.png</code>, and <code>README.md</code>.</p>
+<p>The main constraints were:</p>
+<pre><code class="language-text">- Do not train a neural network.
+- Do not read environment source, tests, ROM details, or hidden state.
+- In native_obs mode, only use obs returned by reset/step.
+- In ram mode, info[&quot;ram&quot;] is allowed.
+- Atari initialization parameters are fixed, including frame_skip=1, reward_clip=False, sticky action=0.
+- All actual environment steps used for probe/debug/trial must count toward cumulative_env_steps.
+</code></pre>
+<p>First look at environment-step curves. HNS means human-normalized score: each game's score is normalized against the human baseline before comparison. In the fully unattended batch, <code>native_obs</code> Atari median HNS reached <code>0.32</code> around <code>1M</code> steps, and <code>ram</code> reached <code>0.26</code>, clearly above the early PPO2 / CleanRL EnvPool PPO curves in the figure. Around <code>9.7M</code> steps, <code>native_obs</code> reached <code>0.81</code> and <code>ram</code> reached <code>0.59</code>. In the same comparison, the OpenRL Benchmark PPO2 / CleanRL EnvPool PPO median HNS curves are roughly <code>0.88 / 0.92</code> at <code>10M</code> steps.</p>
+<p><img alt="Atari57 sample efficiency vs OpenRL Benchmark" src="atari57_openrl_sample_efficiency_context.png"></p>
+<p>This comparison is about environment interaction efficiency. It does not convert the cost of the coding agent reading logs, writing code, and watching videos into the total compute budget. The signal is still concrete: a very rough coding-agent batch workflow, with no human inspection of intermediate results, already pushes the Atari57 median into the neighborhood of these baselines.</p>
+<p>If we aggregate by taking the best input mode for each game at the end, Codex median HNS is <code>0.83</code>, OpenAI Baselines PPO2 is <code>0.80</code>, and CleanRL EnvPool PPO is <code>0.98</code>. If we relax further to best single run, Codex median HNS is <code>1.18</code>. This does not replace a strict training-curve comparison, but it shows more directly what level the unattended search eventually covered.</p>
+<p>Aggregate curves compress differences into one median, so I also looked at per-game HNS. On Breakout, Krull, DoubleDunk, Boxing, and DemonAttack, both heuristics and RL baselines reach scores well above the human baseline. On Asterix, Jamesbond, Centipede, Bowling, Skiing, and Tennis, heuristics are relatively strong. On Atlantis, VideoPinball, UpNDown, Assault, RoadRunner, and StarGunner, PPO is clearly much stronger.</p>
+<p><img alt="Atari57 per-game HNS comparison" src="atari57_per_game_hns_comparison.png"></p>
+<p>The most interesting part of Atari57 is that the source of sample efficiency changes. Traditional neural-network Atari learning has to relearn representation, credit assignment, and action meaning from high-dimensional inputs in every environment. Codex instead decomposes each environment into small maintainable program systems: aiming and dodging in shooters, bounce prediction in catching games, position rules in avoidance games, wrapper details, and each environment's own failed-experiment records.</p>
+<h4>Montezuma</h4>
+<p>Some environments are not a good fit for ordinary reactive heuristic policies. Montezuma's Revenge is the typical example.</p>
+<p>In an earlier standalone Montezuma search, state-graph search moved the key distance from <code>72</code> to <code>28</code>, but reward stayed at <code>0</code>. Later, in the Atari57 native-image batch, one unattended Codex run reached <code>400.0</code> points: the repaired best replay was <code>repair_replay_r1_t19734</code>, seed <code>10001</code>, using <code>1769</code> environment steps. It is essentially an open-loop route made of <code>86</code> macro-actions.</p>
+<video controls src="montezuma_400_render_seed10001_h264.mp4" width="360"></video>
+
+<p>Montezuma exposes an expressivity problem. A normal <code>policy.py</code> state machine has trouble representing this kind of route: actions must align with timing, failures need recovery, and intermediate states need ways to re-enter the plan. Some environments need composable macro-actions, recoverable search state, and perhaps a program structure better suited to long-horizon planning than ordinary <code>if else</code>.</p>
+<p>This kind of failure is valuable for HL. It tells us where the boundary is, and hints at the next layer of abstraction. Some feedback needs a new representation and a new program form before it can enter the system. For Montezuma, the next interface probably needs macro-actions, recoverable state, search, and long-term memory.</p>
+<h3 id="en-section-a-2">A.2 Reproduction Entrypoints</h3>
+<p>The commands below assume they are run from this article's directory, with dependencies already installed from <code>requirements.txt</code>. They check the representative results discussed above.</p>
+<h4>Pong 21</h4>
+<pre><code class="language-bash">python heuristic_pong.py \
+  --policy ram \
+  --episodes 1 \
+  --seed 0
+</code></pre>
+<p>Expected output should include <code>episode=0 score=21.0</code> and <code>mean=21.000</code>.</p>
+<h4>Breakout 864</h4>
+<pre><code class="language-bash">rm -f /tmp/repro_breakout_864.jsonl /tmp/repro_breakout_864.csv
+python heuristic_breakout.py \
+  --policy ram \
+  --episodes 1 \
+  --seed 0 \
+  --max-steps 108000 \
+  --deadband 3 \
+  --chase-lead-steps 6 \
+  --tunnel-offset 0 \
+  --launch-offset 24 \
+  --fast-ball-min-vy 3 \
+  --fast-low-ball-lead-steps 3 \
+  --stuck-trigger-steps 1024 \
+  --stuck-switch-steps 256 \
+  --stuck-offset 12 \
+  --stuck-release-horizon-steps 8 \
+  --brick-balance-deadzone 0.01 \
+  --brick-balance-bias-min-score 432 \
+  --late-game-paddle-lag-px 2 \
+  --late-game-lag-ball-y 170 \
+  --trial-name repro_breakout_864 \
+  --log-path /tmp/repro_breakout_864.jsonl \
+  --summary-path /tmp/repro_breakout_864.csv
+</code></pre>
+<p>Expected output should include <code>score=864.0</code> and <code>mean=864.000</code>.</p>
+<h4>Ant Default MPC Policy</h4>
+<pre><code class="language-bash">rm -f /tmp/repro_ant_6146_eval5.jsonl /tmp/repro_ant_6146_eval5.csv
+python heuristic_ant.py \
+  --policy mpc \
+  --episodes 5 \
+  --seed 0 \
+  --max-steps 1000 \
+  --mujoco-xml-path ant_envpool.xml \
+  --trial-name repro_ant_6146_eval5 \
+  --log-path /tmp/repro_ant_6146_eval5.jsonl \
+  --summary-path /tmp/repro_ant_6146_eval5.csv
+</code></pre>
+<p>My local rerun produced <code>mean=6005.521</code>, <code>min=5776.805</code>, and <code>max=6146.208</code>.</p>
+<h4>HalfCheetah Staged-Tree MPC</h4>
+<pre><code class="language-bash">python heuristic_halfcheetah_v5.py \
+  --policy mpc-staged-tree-asym-pd-cpg \
+  --eval-episodes 5 \
+  --eval-seed 100
+</code></pre>
+<p>My local rerun produced a five-episode mean of <code>11836.693</code>.</p>
+<h4>Montezuma 400-Point Replay</h4>
+<pre><code class="language-bash">python heuristic_montezuma_400_policy.py \
+  --metadata-out /tmp/repro_montezuma_400.json
+</code></pre>
+<p>Expected output should include <code>"score": 400.0</code> and <code>"env_steps": 1769</code>. This is a boundary case; it should not be read as a general Montezuma policy.</p>
+    </article>
+    <article id="article-zh" class="lang-pane" lang="zh-CN" hidden>
 <h1>Learning Beyond Gradients</h1>
 <blockquote>
 <p>Jiayi Weng</p>
@@ -144,51 +502,52 @@ th { background: #f1f5f9; }
       <li class="toc-level-2"><a href="#zh-section-1">异常现象</a></li>
       <li class="toc-level-2"><a href="#zh-section-2">Heuristic Learning</a></li>
       <li class="toc-level-2"><a href="#zh-section-3">为什么 Heuristic Learning 以前没发展起来</a></li>
-      <li class="toc-level-2"><a href="#zh-section-4">Heuristic Learning 怎么帮助 Continual Learning</a></li>
+      <li class="toc-level-2"><a href="#zh-section-4">Heuristic Learning 怎么做 Continual Learning</a></li>
       <li class="toc-level-2"><a href="#zh-section-5">Heuristic System 的复杂度</a></li>
       <li class="toc-level-2"><a href="#zh-section-6">下一个范式？</a></li>
+      <li class="toc-level-2"><a href="#zh-disclaimer">免责声明</a></li>
+      <li class="toc-level-2"><a href="#zh-acknowledgements">致谢</a></li>
+      <li class="toc-level-2"><a href="#zh-citation">引用</a></li>
       <li class="toc-level-2"><a href="#zh-appendix">附录：实验过程和复现入口</a></li>
       <li class="toc-level-3"><a href="#zh-section-a-1">A.1 实验过程简述</a></li>
       <li class="toc-level-3"><a href="#zh-section-a-2">A.2 复现入口</a></li>
     </ol>
   </nav>
-<p>我最近看到一个有点反直觉的现象：coding agent 没有训练新的神经网络，只是持续看失败、改代码、加测试、看回放，就能把一套程序策略越养越强。</p>
-<p>一个打砖块游戏，纯 Python 策略最后打到理论满分 <code>864</code>；一个仿真四足机器人，纯 Python 程序策略跑到常见 RL baseline（常用参照算法）的量级；一整套 57 个 Atari 游戏，无人值守跑出来的中位数表现，在早期环境交互步上已经明显高过 PPO / CleanRL EnvPool PPO 的曲线。</p>
-<p>这里最奇怪的地方不在分数本身，而在学习发生的位置：没有梯度下降，没有更新网络权重，更新发生在代码、测试、日志、回放、memory 和工具链里。</p>
-<p>学习未必只发生在神经网络权重里。软件结构本身也可以承载一部分学习。</p>
-<p>这件事让我重新看待 heuristic，也就是那些手写的启发式规则和程序。过去很多 heuristic 看起来没有前途，原因常常落在维护成本上；它们本身未必太弱。coding agent 改变的是这条维护成本曲线。规则、测试、日志、memory 和 patch 原来只是散落的工程材料，现在开始可以组成一个会持续更新的软件系统。</p>
-<p>如果这个方向成立，它也许会给 Continual Learning 一个很不一样的入口。Continual Learning 通常指系统长期学习新东西时，还能保住旧能力；神经网络在这里会遇到灾难性遗忘。我的问题是：有没有一部分“持续学习”，可以从参数更新问题，改写成软件维护问题？</p>
+<p>Continual Learning 一直难以被解决，主要卡在神经网络的灾难性遗忘：学了新东西，旧能力就容易被冲掉。那如果不把目光只放在神经网络权重上，还有没有其他解决方案？</p>
+<p>随着 LLM agent 变强，coding 的速度和质量都在提升。但我最近更在意的是另一个现象：coding agent 不训练新网络、不更新权重，只是持续看失败、改代码、加测试、看回放，也能把一套程序系统越养越强。</p>
+<p>这让我重新看待 heuristic，也就是手写规则和程序策略。过去很多 heuristic 不是没用，而是没人养得起；coding agent 改变的是这条维护成本曲线。于是，过去只能当一次性补丁的规则，开始变成值得长期拥有的代码。</p>
+<p>凡是可以被持续迭代的，都开始能被解决。这也是 Continual Learning 一直想要解决的问题。它会是既 Pretrain、RLHF、Large-scale RL/RLVR 之后的下一个范式吗？</p>
 <h2 id="zh-section-1">异常现象</h2>
-<p>起点其实很小。在业余时间维护 <a href="https://github.com/sail-sg/envpool">EnvPool</a> 的时候，我想用一个便宜一点的策略来测试游戏环境正确性，不然每次跑神经网络都很费测试资源。</p>
+<p>在业余时间维护 <a href="https://github.com/sail-sg/envpool">EnvPool</a> 的时候，我想用一个便宜一点的策略来测试游戏环境正确性，不然每次 CI 都跑神经网络，很费测试资源。</p>
 <p>一开始的问题只是：</p>
 <pre><code class="language-text">能不能写一些便宜、可复现、比随机强很多的 heuristic，
 专门把环境跑到有信息量的状态？
 </code></pre>
-<p>我尝试使用 codex 写一个基于规则的版本，完全不依赖 NN。没想到弄了几下，结果比我预期离谱很多。</p>
+<p>我试着使用 codex（gpt-5.4）写一个基于规则的版本，完全不依赖 NN。没想到弄了几下，结果比我预期离谱很多：</p>
 <ul>
-<li>一个打砖块游戏，策略从 <code>387 -&gt; 507 -&gt; 839 -&gt; 864</code>，最后打到理论最高分。对应 benchmark 是 Atari Breakout；</li>
-<li>一个仿真四足机器人关节控制任务，纯 Python 程序策略先学会节律步态，再接上短视窗模型规划，最后上了 <code>6000+</code> 分，进入常见 RL baseline 的量级。对应 benchmark 是 MuJoCo Ant；</li>
-<li>一个仿真跑步任务，靠可解释的步态/姿态规则和在线规划，5 局复测均值到了 <code>11836.7</code>。对应 benchmark 是 MuJoCo HalfCheetah；</li>
-<li>一整套 Atari 57 个游戏，我跑了 <code>57 个游戏 x 2 种输入 x 3 次运行 = 342 条 coding-agent 搜索轨迹</code>。表现有好有坏，但在环境交互步这个口径下，中位数 HNS 在 <code>1M</code> 环境步附近已经远高于 PPO / CleanRL EnvPool PPO 的早期曲线。</li>
+<li>一个打砖块游戏 Atari Breakout，策略从 <code>387 -&gt; 507 -&gt; 839 -&gt; 864</code>，最后打到理论最高分；</li>
+<li>一个仿真四足机器人关节控制任务 MuJoCo Ant，纯 Python 程序策略先学会节律步态，再接上短视窗模型规划，最后上了 <code>6000+</code> 分，进入常见 RL SOTA 的量级；</li>
+<li>一个仿真机器人跑步任务 MuJoCo HalfCheetah，靠可解释的步态/姿态规则和在线规划，迭代到 5 局复测均值 <code>11836.7</code>，也进入了 RL SOTA 的量级；</li>
+<li>一整套 Atari 57 个游戏，一共跑了 57 个游戏 x 2 种输入 x 3 次运行 = 342 条 coding-agent 搜索轨迹，表现有好有坏；但在固定环境交互步数下，中位数 HNS 游戏得分在 <code>1M</code> 环境步附近已经远高于 RL PPO 算法的早期曲线。</li>
 </ul>
-<p>这些分数只是一层现象。更让我在意的是：codex 没有训练神经网络，它在维护一套还能继续改的软件系统。</p>
-<p>Breakout 到最后远远超过一句“球在左边就往左”。它长出来的是动作探测、状态读取、球和挡板检测、落点预测、卡住循环检测、回归测试、视频回放和实验记录。Ant 也超过一条步态公式，里面有节律控制、姿态反馈、接触信息、短视窗模型展开和 residual plan。</p>
-<p>这就是我觉得必须发明一个新说法的原因：这里被更新的对象已经不只是策略函数，而是一套带有记忆、反馈入口和回归机制的软件系统。</p>
+<p>这些结果第一次见到十分震撼，更让我在意的是：codex 没有训练神经网络，它在维护一套还能继续生长的软件系统。</p>
+<p>Breakout 策略到最后远远超过一句“球在左边就往左”。这个策略长出来的是动作探测、状态读取、球和挡板检测、落点预测、卡住循环检测、回归测试、视频回放和实验记录。Ant 策略也超过一条步态公式，里面有节律控制、姿态反馈、接触信息、短视窗模型展开。</p>
+<p>于是我意识到有必要在这里创造一个新的概念：这里被更新的对象已经不只是策略函数，而是一套带有记忆、反馈入口和回归机制的软件系统。</p>
 <h2 id="zh-section-2">Heuristic Learning</h2>
-<p>在和 codex 交流了一阵子之后，我想把这个过程定义为 <strong>Heuristic Learning（HL）</strong>：</p>
+<p>在接着和 codex 交流了一阵子之后，我想把这个过程定义为 <strong>Heuristic Learning（HL）</strong>：</p>
 <ul>
-<li>HL 的主体由程序构成；</li>
-<li>它和 RL 共享状态、动作、反馈、更新的闭环，但更新对象从神经网络参数换成了软件结构；</li>
+<li>HL 的主体由程序代码构成；</li>
+<li>它和 RL 共享状态、动作、反馈、更新的闭环，但更新对象从（神经网络）参数换成了软件结构；</li>
 <li>它的反馈由 coding agent 消化，可以来自环境 reward、testcase、日志、视频、回放、人类反馈；</li>
-<li>它的 update 不走反向传播；coding agent 直接修改 policy、状态检测器、测试、配置或者 memory；</li>
-<li>HL 是学习和更新的过程；被 HL 长期维护的对象可以叫 <strong>Heuristic System（HS）</strong>；</li>
-<li>HS 超过一个孤立的 <code>policy.py</code>：它至少包含程序策略、状态表示、反馈入口、实验记录、回放或测试、memory，以及由 coding agent 执行的更新机制。单条 rule 还太薄；规则、反馈、历史和下一轮更新通路接起来，才进入 HS 的范围。</li>
+<li>它的更新不走反向传播；coding agent 直接修改 policy、状态检测器、测试、配置或者 memory；</li>
+<li>HL 是学习和更新的过程；被 HL 长期维护的对象称之为 <strong>Heuristic System（HS）</strong>；</li>
+<li>HS 超过一个孤立的 <code>policy.py</code>：它至少包含程序策略、状态表示、反馈入口、实验记录、回放或测试、memory，以及由 coding agent 执行的更新机制。单条 rule 不够，规则、反馈、历史和下一轮更新全部接起来，才称之为 HS。</li>
 </ul>
 <p>列一个表就是：</p>
 <table>
 <thead>
 <tr>
-<th>异同</th>
+<th>维度</th>
 <th>Deep RL</th>
 <th>HL</th>
 </tr>
@@ -197,12 +556,12 @@ th { background: #f1f5f9; }
 <tr>
 <td>Policy（策略）</td>
 <td>由神经网络参数构成</td>
-<td>由代码构成，可以是 rule、状态机、controller、MPC、宏动作</td>
+<td>由代码构成，可以是代码规则、状态机、controller、MPC、宏动作</td>
 </tr>
 <tr>
 <td>State（状态）</td>
-<td>通常由网络隐层或显式观测表示</td>
-<td>通常显式写成变量、检测器、缓存、belief、风险标签</td>
+<td>通常由显式观测表示</td>
+<td>通常显式写成变量、检测器、缓存等可表示的东西</td>
 </tr>
 <tr>
 <td>Action（动作）</td>
@@ -211,8 +570,8 @@ th { background: #f1f5f9; }
 </tr>
 <tr>
 <td>Feedback（反馈）</td>
-<td>主要由固定 reward / loss 提供</td>
-<td>由 coding agent 根据 context 消化，testcase、环境反馈、日志、回放都算 context</td>
+<td>主要由固定 reward 提供</td>
+<td>由 coding agent 根据 context 提供，testcase、环境反馈、日志、回放都算 context</td>
 </tr>
 <tr>
 <td>Update（更新）</td>
@@ -226,30 +585,29 @@ th { background: #f1f5f9; }
 </tr>
 </tbody>
 </table>
-<p>HL 相比 deep RL 有很多良好的性质：</p>
+<p>Heuristic Learning 相比 Deep RL 有很多良好的性质：</p>
 <ul>
-<li>可解释性：神经网络很难解释，HL 的代码策略可以翻译成人话；</li>
-<li>Sample Efficient：一次有效代码更新可以直接跳到新策略，不用调学习率慢慢爬；</li>
-<li>可回归：旧能力可以变成 test、replay、golden case；</li>
+<li>可解释性（Explainability）：神经网络很难解释，HL 的代码策略可以翻译成人话；</li>
+<li>样本效率（Sample Efficiency）：一次有效代码更新可以直接跳到新策略，不用调学习率慢慢爬；</li>
+<li>可回归 / 可验证（Regression-testable）：旧能力可以变成 test、replay、golden case；</li>
 <li>可约束过拟合：代码 heuristic 也会过拟合到 seed、环境细节或测试漏洞，但简化、回归和多 seed 检查可以形成一种工程正则化；</li>
-<li>可以避免一部分灾难性遗忘：旧能力不用全靠模型自己记住，可以被写进 rule set 和测试里。</li>
+<li>可以避免一部分灾难性遗忘（Catastrophic Forgetting）：旧能力不用全靠模型自己记住，可以被写进 rule set 和测试里。</li>
 </ul>
-<p>这不等于 HL 要替代 deep RL。感知和复杂泛化仍然是神经网络更擅长的地方。让我觉得有价值的是另一件事：有一类原来因为维护成本太高而不值得写的 heuristic，现在突然可能值得长期拥有了。</p>
+<p>重点在于，有一类原来因为维护成本太高而不值得写的 heuristic，现在突然可能值得长期拥有了。</p>
 <h2 id="zh-section-3">为什么 Heuristic Learning 以前没发展起来</h2>
 <p>如果说 HL 的前身是专家系统、规则系统，那么在 coding agent 没发展起来之前，这玩意的维护成本十分高昂。</p>
-<p>人手维护 heuristic 很容易变成这样：</p>
+<p>人类手工维护 heuristic 很容易变成这样：</p>
 <pre><code class="language-text">今天加一条规则修 case A。
 明天发现 case B 被修坏了。
 后天再加一个 if。
 大后天没人敢删了。
 </code></pre>
-<p>问题不在 heuristic 没用，卡在没人养得起。之前人力维护专家系统，有点像蒸汽机还没发明的时候用人力拉车。车能动，问题是每往前走一点都要烧人。</p>
-<p>coding agent 的出现改变了这条成本曲线。它像一条可以输送智力的营养管道，可以持续浇灌一个 HL，让它自己迭代进化。</p>
+<p>问题不在 heuristic 没用，在没人力能养得起。之前人力维护专家系统，有点像工业革命前手工纺纱：规模一大，稳定性和维护成本就压死人。纺织机改变的是产能曲线；coding agent 改变的是 heuristic 的维护曲线。它像一条可以输送智力的营养管道，可以持续浇灌一个 HS，让它自己迭代进化。</p>
 <p><img alt="coding agent 把反馈接进软件生长" src="ig_0c2dd0d2f07176560169fbc256930481969d3c6ba3316d5486.png"></p>
 <p>目前常见的 agentic 反馈闭环主要是：</p>
 <pre><code class="language-text">feature request -&gt; agent 写代码 -&gt; 过 test -&gt; 人类给一点反馈 -&gt; 下一轮 patch
 </code></pre>
-<p>但随着大模型能力提升，人类介入次数会逐渐变少，这个 loop 就有机会在某些边界明确的系统里自动闭合：</p>
+<p>但随着大模型能力提升，人类介入次数会逐渐变少，这个反馈循环就有机会在某些边界明确的系统里自动闭合，从而能够实现自动化用 HL 批量生产 HS：</p>
 <pre><code class="language-text">环境反馈 / 测试失败 / 日志异常
 -&gt; coding agent 读 context
 -&gt; 修改 policy / test / memory
@@ -257,11 +615,8 @@ th { background: #f1f5f9; }
 -&gt; 把结果写回 trials 和 summary
 -&gt; 下一轮继续
 </code></pre>
-<p>这里要守住一点：反馈必须留下来。只是在聊天里看过一次失败，不算 learning；把失败写进测试、回放、日志解析、memory 或策略版本里，并且影响下一轮运行，才算真的进入系统。</p>
-<p>这也是我后来更愿意把单个 heuristic program 扩展成 Heuristic System 的原因。单独一条 rule 不够，能长期长下去的是整套闭环。</p>
-<h2 id="zh-section-4">Heuristic Learning 怎么帮助 Continual Learning</h2>
-<p>回到 Continual Learning。</p>
-<p>神经网络里的灾难性遗忘，是新数据把参数往新任务推，旧能力被覆盖掉。HL 也会忘，只是忘法更工程：</p>
+<h2 id="zh-section-4">Heuristic Learning 怎么做 Continual Learning</h2>
+<p>神经网络里的灾难性遗忘，是新数据把参数往新任务推，旧能力被覆盖掉。HL 也会忘，例如：</p>
 <ul>
 <li>新规则修好了一个失败模式，同时破坏旧场景；</li>
 <li>新 memory 把 agent 反复带到错误方向；</li>
@@ -270,62 +625,75 @@ th { background: #f1f5f9; }
 <li>规则越堆越多，最后 agent 自己也维护不动。</li>
 </ul>
 <p>所以 HL 不会自动解决 Continual Learning。它把“防遗忘”变成了更工程化的东西。</p>
-<p>在 HL 里，旧能力可以被固定成：</p>
+<p>在 HL 里，旧能力可以被固化成：</p>
 <ul>
 <li>回归测试；</li>
 <li>固定 seed 的 replay；</li>
 <li>golden trace；</li>
 <li>失败视频；</li>
-<li><code>trials.jsonl</code>；</li>
-<li><code>summary.csv</code>；</li>
 <li>版本 diff；</li>
 <li>明确写下来的失败方向。</li>
 </ul>
-<p>这和神经网络把经验压进权重很不一样。HL 的历史是显式的、可读的、可删的、可重构的。它负责“记住”，也负责把一堆局部补丁压缩成更简单的表示。</p>
-<p>这一点绕不开。只增长不压缩的 HL，最后一定会变成屎山代码。它会“记住”很多东西，但记住的方式太烂，导致谁也不敢动。</p>
-<p>所以一个健康的 HL 至少需要两个动作：</p>
-<pre><code class="language-text">吸收反馈：把新失败、新日志、新 reward 写回系统。
-压缩历史：把一堆局部补丁折回更简单、更可维护的表示。
-</code></pre>
+<p>与神经网络把经验压进权重完全不一样：HL 的历史是显式、可读、可删、可重构的。它负责“记住”，也负责把一堆局部补丁压缩成更简单的表示。</p>
+<p>（只增长不压缩的 HS，最后一定会变成屎山代码。它会“记住”很多东西，但记住的方式太差，导致谁也不敢动，从而腐化）</p>
+<p>所以一个健康的 HS 至少需要两个操作维持：</p>
+<ol>
+<li>吸收反馈：把新失败、新日志、新 reward 写回系统。</li>
+<li>压缩历史：把一堆局部补丁折回更简单、更可维护的表示。</li>
+</ol>
 <p>这就把 Continual Learning 从“怎么更新参数”变成了“怎么维护一个持续吸收反馈的软件系统”。</p>
 <h2 id="zh-section-5">Heuristic System 的复杂度</h2>
 <p>此处定义 <strong>耦合复杂度</strong> 为 coding agent 能维护多复杂的策略来支持 HL。展开说，就是一次更新必须同时照顾多少相互牵连的状态、规则、测试、反馈和历史。</p>
-<p>这个量不能按代码行数算。一个 500 行策略，如果模块边界清楚、测试完整、状态可复现，可能很好维护；一个 80 行策略，如果每行都互相牵制、没有日志、没有回放，也可能是小型地雷阵。</p>
+<p>这个量不能按代码行数算。一个 500 行策略，如果模块边界清楚、测试完整、状态可复现，可能很好维护；一个 80 行策略，如果每行都互相牵制、没有日志、没有回放，也可能是个定时炸弹，一碰就崩。</p>
 <p>朝代码一侧看，耦合复杂度受模块边界、接口稳定性、测试覆盖、日志观测性、回滚成本和状态可复现性限制。好的模块化会把全局耦合切成局部耦合，从而降低耦合复杂度；好的测试能让 coding agent 不必每次在脑子里模拟整个系统。</p>
-<p>朝 coding agent 一侧看，能接受多少耦合复杂度，取决于模型能力、上下文长度、memory 质量、工具质量、整体迭代速度。更强的模型能同时处理更多相互作用；更长的上下文能让它少丢线索；memory 可以把跨轮次迭代经验留下；搜索、定位、运行、回放这些工具能够把一部分认知负担搬到外部。</p>
-<p>把这两侧放一起，可以得到一组更像研究假设的判断：</p>
+<p>朝 coding agent 一侧看，能接受多少耦合复杂度，取决于模型能力、上下文长度、memory 质量、工具质量、整体迭代速度。更强的模型能够同时处理更多相互作用；更长的上下文能让它少丢线索；memory 可以把跨轮次迭代经验留下；搜索、定位、运行、回放这些工具能够把一部分认知负担搬到外部。</p>
+<p>把这两侧放一起，可以得到一组判断：</p>
 <ul>
 <li>反馈越清楚，单位 agent 智力能维护的耦合复杂度越高；</li>
 <li>同等工具和反馈下，模型能力越强，能处理的耦合复杂度越高；</li>
 <li>模块化、测试、回放会把一部分耦合复杂度转移到环境里；</li>
 <li>memory 和工具会提高 agent 的有效上下文；</li>
-<li>只增长不压缩的 HL 会让耦合复杂度持续上升，直到超过维护能力。</li>
+<li>只增长不压缩的 HS 会让耦合复杂度持续上升，直到超过维护能力。</li>
 </ul>
-<p>Breakout 能走到 <code>864</code>，有规则简单的一面，也有失败可以视频回放、局部复现、回归验证的一面。Ant 复杂得多，但它可以拆成节律、姿态、接触、residual MPC 这些模块。</p>
-<p>Montezuma 是一个很好的反例。Atari57 里有一条无人值守 run 到了 <code>400</code> 分，但那条路线由 <code>86</code> 个宏动作组成，基本是开环执行。这个例子提醒我：有些环境需要更强的程序形态，比如可组合宏动作、可恢复搜索状态、长期 memory。普通 <code>if else</code> 扛不住所有问题。<code>if else</code> 也会累，别老欺负人家。</p>
+<p>Breakout 策略能走到 <code>864</code> 的满分，有规则简单的一面，也有失败可以视频回放、局部复现、回归验证的一面。Ant 复杂得多，但它可以拆成节律、姿态、接触、residual MPC 这些模块。</p>
+<p>Montezuma 是一个很好的反例。Atari57 里有一条无人值守的记录到了 <code>400</code> 分，但那条路线由 <code>86</code> 个宏动作组成，基本是开环执行。这个例子说明，有些环境需要更强的程序形态，比如可组合宏动作、可恢复搜索状态、长期 memory。普通 <code>if else</code> 不能解决所有问题。</p>
 <h2 id="zh-section-6">下一个范式？</h2>
 <p>目前的范式转移是从最开始的 pretrain，到 RLHF，再变成 large-scale RL / RLVR。凡是可以验证的，都开始能被解决。</p>
 <p>Online Learning 和 Continual Learning 可以被当前 RLVR 生产出来的 agentic coding，通过 Heuristic Learning 的方式部分解决。从这个愿景出发，我愿称其为下一个范式：凡是可以被持续迭代的，都开始能被解决。</p>
-<p>为什么说是部分解决？因为 Heuristic Learning 并不能做所有神经网络能做的事情。它受制于代码的表达能力，比如复杂感知和长程泛化。在我目前认知范围内，我想不出有个 agent 能搓出一个纯 Python code、不用神经网络去解决 ImageNet。</p>
-<p>于是问题在于如何结合二者，同时解决 Online Learning 和 Continual Learning。最有希望的方向是：用 HL 把在线经验内化成可训练、可回归、可筛选的数据，再周期性更新神经网络。</p>
-<p>以机器人为例，一个可能的分工形态如下：</p>
+<p>为什么说是部分解决？因为 Heuristic Learning 并不能做所有神经网络能做的事情。它受制于代码的表达能力，比如复杂感知和长程泛化。比如在我目前认知范围内，我想不出有个 agent 能搓出一个纯 Python code、不用神经网络去解决 ImageNet。</p>
+<p>于是问题在于如何结合神经网络和 HL，同时解决 Online Learning 和 Continual Learning。最有希望的方向是：用 HL 处理在线数据快速生成在线经验，把在线经验内化成可训练、可回归、可筛选的数据，再周期性更新神经网络。</p>
+<p>以机器人为例，如果套用 System 1/2 的术语，一个可能的分工形态如下：</p>
 <ul>
-<li>专用、浅层 NN：当作 system 1 的一部分，快、便宜，负责感知、分类、物体状态估计；</li>
-<li>HL：也可以当作 system 1 的一部分，负责最新数据处理、规则、测试、回放、memory、安全边界、局部恢复；</li>
-<li>LLM agent：作为 system 2，负责给 HL 提供反馈、改进数据，并周期性提取 HL 生成的数据来更新自身。</li>
+<li>专用、浅层 NN：当作 System 1 的一部分，快、便宜，负责感知、分类、物体状态估计；</li>
+<li>HL：也可以当作 System 1 的一部分，负责最新数据处理、规则、测试、回放、memory、安全边界、局部恢复；</li>
+<li>LLM agent：作为 System 2，负责给 HL 提供反馈、改进数据，并周期性提取 HL 生成的数据来更新自身。</li>
 </ul>
 <p>这套东西可以继续拆成层级结构：</p>
 <pre><code class="language-text">关节级 HL -&gt; 肢体级 HL -&gt; 全身平衡 HL -&gt; 任务级 HL
 </code></pre>
 <p>低层负责安全和低延迟控制，中层负责步态和接触，高层负责任务、恢复和长期记忆。coding agent 不一定直接“懂得走路”，它更像插进系统里的更新管线：持续把失败视频、传感器流、仿真结果、测试结果喂进系统，再把反馈改写成代码、参数、保护规则和 memory。</p>
-<p>LLM agent 可以共享，也可以相互隔离自行学习。这里的问题是：HL 提供的特定数据分布如何才能不让 LLM 的周期性更新崩溃。这是一个经典的 post-training 问题，已经有很多成熟经验，由于某些原因在这里就不展开了。</p>
-<p>我想保留的判断是：</p>
-<pre><code class="language-text">agentic coding 改变了写代码速度，
-也改写了哪些代码值得被长期拥有。
-</code></pre>
-<p>过去很多 heuristic 看起来没有前途，原因常常落在维护成本上；它们本身未必太弱。coding agent 改变的是这条维护成本曲线。规则、测试、日志、memory 和 patch 原来只是散落的工程材料，现在开始可以组成一个会持续更新的 Heuristic System。</p>
+<p>LLM agent 可以共享，也可以相互隔离在机器人体内自行学习。这里的问题是：HL 提供的<em>特定数据分布</em>如何才能不让 LLM 的周期性更新崩溃。这是一个经典的 post-training 问题，已经有很多成熟经验，由于某些原因在这里就不展开了。</p>
+<p>Agentic coding 改变了写代码速度，也改写了哪些代码值得被长期拥有。</p>
+<p>过去很多 heuristic 看起来没有前途，原因常常落在维护成本上；它们本身未必太弱。coding agent 改变的是这条维护成本曲线。规则、测试、日志、memory 和补丁原来只是散落的工程材料，现在开始可以组成一个会持续更新的 Heuristic System，能够真正解决 Online Learning 和 Continual Learning 所未能解决的问题。</p>
 <p>欢迎来到下一个范式！</p>
+<h2 id="zh-disclaimer">免责声明</h2>
+<p>本文仅代表个人观点，不代表公司立场；文中讨论与任何公司具体项目、产品规划或内部工作无关。</p>
+<h2 id="zh-acknowledgements">致谢</h2>
+<p>感谢 <a href="https://costa.sh/">Costa Huang</a> 和 <a href="https://tairanhe.com/">Tairan He</a> 的反馈。</p>
+<h2 id="zh-citation">引用</h2>
+<p>如果需要在 LaTeX 里引用这篇文章，可以用下面这个 BibTeX。</p>
+<pre><code class="language-bibtex">@misc{weng2026learning_beyond_gradients,
+  title = {Learning Beyond Gradients},
+  author = {Weng, Jiayi},
+  year = {2026},
+  month = may,
+  howpublished = {\url{https://trinkle23897.github.io/learning-beyond-gradients/}},
+  note = {Blog post}
+}
+</code></pre>
 <h2 id="zh-appendix">附录：实验过程和复现入口</h2>
+<p>完整 artifact repo 在 <a href="https://github.com/Trinkle23897/learning-beyond-gradients">https://github.com/Trinkle23897/learning-beyond-gradients</a>。下面命令默认你已经 clone 了这个 repo，并在仓库根目录运行；GitHub Pages 只展示文章和必要静态文件，完整脚本、CSV、视频和实验材料都在 repo 里。</p>
+<p>以下实验中 codex 模型版本均为 gpt-5.4，最新版本模型尚未测试。以下实验报告均由 codex 自行攥写。</p>
 <h3 id="zh-section-a-1">A.1 实验过程简述</h3>
 <p>一开始我直接问 Codex：“写一个能解决 Breakout 的策略。”效果一般。低分没有解释力：它不知道是动作语义错了、状态检测错了、评测设置错了，还是策略结构本身不行。后来我把任务改成另一种形式：别只交一个 <code>policy.py</code>，要维护完整闭环。</p>
 <p>闭环大概长这样：</p>
@@ -476,5 +844,57 @@ python heuristic_ant.py \
 <p>期望输出里应该包含 <code>"score": 400.0</code> 和 <code>"env_steps": 1769</code>。这条是边界案例，不要把它理解成通用 Montezuma 策略。</p>
     </article>
   </main>
+  <script>
+(function () {
+  const panes = {
+    en: document.getElementById('article-en'),
+    zh: document.getElementById('article-zh'),
+  };
+  const buttons = {
+    en: document.getElementById('lang-en'),
+    zh: document.getElementById('lang-zh'),
+  };
+  const titles = {
+    en: 'Learning Beyond Gradients',
+    zh: 'Learning Beyond Gradients',
+  };
+  const storageKey = 'learning_beyond_gradient_lang_v1';
+
+  function setLanguage(lang, updateUrl) {
+    if (!panes[lang]) lang = 'en';
+    for (const key of Object.keys(panes)) {
+      const selected = key === lang;
+      panes[key].hidden = !selected;
+      buttons[key].classList.toggle('active', selected);
+      buttons[key].setAttribute('aria-pressed', selected ? 'true' : 'false');
+    }
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    document.title = titles[lang];
+    try { window.localStorage.setItem(storageKey, lang); } catch (_) {}
+    if (updateUrl) {
+      const url = new URL(window.location.href);
+      url.hash = lang === 'zh' ? 'zh' : '';
+      window.history.replaceState(null, '', url);
+    }
+  }
+
+  buttons.en.addEventListener('click', () => setLanguage('en', true));
+  buttons.zh.addEventListener('click', () => setLanguage('zh', true));
+
+  let initial = 'en';
+  if (window.location.hash === '#zh' || window.location.hash.startsWith('#zh-')) {
+    initial = 'zh';
+  } else if (window.location.hash === '#en' || window.location.hash.startsWith('#en-')) {
+    initial = 'en';
+  } else {
+    try {
+      const saved = window.localStorage.getItem(storageKey);
+      if (saved === 'en' || saved === 'zh') initial = saved;
+    } catch (_) {}
+  }
+  setLanguage(initial, false);
+})();
+
+  </script>
 </body>
 </html>
