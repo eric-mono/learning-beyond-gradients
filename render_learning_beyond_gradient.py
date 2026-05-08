@@ -11,6 +11,10 @@ EN_MD = ROOT / "learning-beyond-gradient.en.md"
 ZH_MD = ROOT / "learning-beyond-gradient.md"
 HTML_PATH = ROOT / "learning-beyond-gradient.html"
 PAGE_TITLE_EN = "Learning Beyond Gradients"
+PAGE_URL = "https://trinkle23897.github.io/learning-beyond-gradients/"
+SOCIAL_IMAGE_URL = f"{PAGE_URL}ig_0c2dd0d2f07176560169fbc256930481969d3c6ba3316d5486.png"
+SOCIAL_IMAGE_WIDTH = 1672
+SOCIAL_IMAGE_HEIGHT = 941
 
 
 STYLE = """:root {
@@ -270,6 +274,26 @@ def render_markdown(path: Path, lang: str) -> str:
     return inject_toc(article_html, entries, lang)
 
 
+def social_meta(title: str) -> str:
+    safe_title = escape(title, quote=True)
+    safe_url = escape(PAGE_URL, quote=True)
+    safe_image = escape(SOCIAL_IMAGE_URL, quote=True)
+    return f"""  <meta name="description" content="{safe_title}">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="{safe_title}">
+  <meta property="og:description" content="{safe_title}">
+  <meta property="og:url" content="{safe_url}">
+  <meta property="og:image" content="{safe_image}">
+  <meta property="og:image:width" content="{SOCIAL_IMAGE_WIDTH}">
+  <meta property="og:image:height" content="{SOCIAL_IMAGE_HEIGHT}">
+  <meta property="og:image:alt" content="{safe_title}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{safe_title}">
+  <meta name="twitter:description" content="{safe_title}">
+  <meta name="twitter:image" content="{safe_image}">
+  <meta name="twitter:image:alt" content="{safe_title}">"""
+
+
 def render_single_page(md_path: Path, html_path: Path, title: str, lang: str) -> None:
     article_html = render_markdown(md_path, lang)
     html_lang = "zh-CN" if lang == "zh" else "en"
@@ -280,6 +304,7 @@ def render_single_page(md_path: Path, html_path: Path, title: str, lang: str) ->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escape(title)}</title>
+{social_meta(title)}
   <style>
 {STYLE}
   </style>
@@ -306,6 +331,7 @@ def render_bilingual_page() -> None:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{PAGE_TITLE_EN}</title>
+{social_meta(PAGE_TITLE_EN)}
   <style>
 {STYLE}
   </style>
