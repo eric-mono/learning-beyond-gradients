@@ -279,7 +279,12 @@ def social_meta(title: str) -> str:
     safe_url = escape(PAGE_URL, quote=True)
     safe_image = escape(SOCIAL_IMAGE_URL, quote=True)
     return f"""  <meta name="description" content="{safe_title}">
+  <meta itemprop="name" content="{safe_title}">
+  <meta itemprop="description" content="{safe_title}">
+  <meta itemprop="image" content="{safe_image}">
+  <link rel="image_src" href="{safe_image}">
   <meta property="og:type" content="article">
+  <meta property="og:site_name" content="{safe_title}">
   <meta property="og:title" content="{safe_title}">
   <meta property="og:description" content="{safe_title}">
   <meta property="og:url" content="{safe_url}">
