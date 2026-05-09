@@ -447,7 +447,7 @@ The day after that, nobody dares delete anything.
 </code></pre>
 <p>At that point, the task had changed shape. The output was no longer just a policy file. It was an experimental system that could keep being modified. It had probes, records, replays, failure modes, and clues for the next round.</p>
 <h4>Breakout</h4>
-<p>Related artifacts: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout.py">heuristic_breakout.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_trials.jsonl">heuristic_breakout_trials.jsonl</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_trials_summary.csv">heuristic_breakout_trials_summary.csv</a>.</p>
+<p>Related artifacts: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout.py">heuristic_breakout.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_trials.jsonl">heuristic_breakout_trials.jsonl</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_trials_summary.csv">heuristic_breakout_trials_summary.csv</a>.</p>
 <p>Breakout looks like a geometry problem: where is the ball, where is the paddle, and where will the ball land after bouncing off the wall? The hard part comes later. The policy can keep returning the ball, but stop hitting new bricks, trapping the score in a stable loop.</p>
 <p>In the first round, Codex confirmed the action space and observation shape, then found the paddle, ball, and brick colors from RGB frames, and used those image labels to scan 128 RAM bytes. Early experiment records looked like this:</p>
 <pre><code class="language-text">trial_name                 score   cumulative_env_steps   note
@@ -458,9 +458,9 @@ baseline_v0                99      16,303                 initial RAM intercept
 tunnel0_v1                387      43,303                 no tunnel offset
 </code></pre>
 <p><code>387</code> is the kind of local high score that can fool you. The policy was already good at returning the ball, but it sent the ball into a periodic route: it would not die, but it would not clear more bricks either. A human writing by hand might keep tuning "return accuracy." Codex inspected the video and the last few dozen steps of trace, then localized the issue to a lack of perturbation in the ball trajectory.</p>
-<video controls src="heuristic_breakout_score387_tunnel0_render210x160.mp4" width="360"></video>
+<video controls src="atari/breakout/heuristic_breakout_score387_tunnel0_render210x160.mp4" width="360"></video>
 
-<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_score387_tunnel0_render210x160.mp4">heuristic_breakout_score387_tunnel0_render210x160.mp4</a>.</p>
+<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_score387_tunnel0_render210x160.mp4">heuristic_breakout_score387_tunnel0_render210x160.mp4</a>.</p>
 <p>The first effective mechanism was loop breaking: if there had been no reward for a long time, periodically add an offset to the predicted landing point and knock the ball out of the local cycle. That moved the score from <code>387</code> to <code>507</code>.</p>
 <pre><code class="language-python">if steps_since_reward &gt;= stuck_trigger_steps:
     phase = stuck_offset_index % 4
@@ -475,9 +475,9 @@ tunnel0_v1                387      43,303                 no tunnel offset
 else:
     offset = 0.0
 </code></pre>
-<video controls src="heuristic_breakout_score507_stuckbreaker_render210x160.mp4" width="360"></video>
+<video controls src="atari/breakout/heuristic_breakout_score507_stuckbreaker_render210x160.mp4" width="360"></video>
 
-<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_score507_stuckbreaker_render210x160.mp4">heuristic_breakout_score507_stuckbreaker_render210x160.mp4</a>.</p>
+<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_score507_stuckbreaker_render210x160.mp4">heuristic_breakout_score507_stuckbreaker_render210x160.mp4</a>.</p>
 <p>Then another failure mode appeared. For a fast low ball, chasing the ordinary intercept made the paddle over-lead and drift away. Codex added <code>fast_low_ball_lead_steps=3</code>, and the score jumped from <code>507</code> to <code>839</code>.</p>
 <pre><code class="language-python">if vy &gt; 0.1 and ball_y &lt;= paddle_y:
     steps_to_paddle = max((paddle_y - ball_y) / vy, 0.0)
@@ -488,9 +488,9 @@ elif vy &gt;= fast_ball_min_vy:
 else:
     target_x = ball_x + chase_lead_steps * vx
 </code></pre>
-<video controls src="heuristic_breakout_score839_fastlead_render210x160.mp4" width="360"></video>
+<video controls src="atari/breakout/heuristic_breakout_score839_fastlead_render210x160.mp4" width="360"></video>
 
-<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_score839_fastlead_render210x160.mp4">heuristic_breakout_score839_fastlead_render210x160.mp4</a>.</p>
+<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_score839_fastlead_render210x160.mp4">heuristic_breakout_score839_fastlead_render210x160.mp4</a>.</p>
 <p>The move from <code>839</code> to <code>864</code> was more like caring for a system that had already become complex. Codex tried deadbands, serve offsets, stuck offsets, brick-balance bias, and lookahead steps. Many directions did nothing. The final useful change was a late-game condition: after the first wall of bricks, the stuck offset only applies when the ball is still far from the paddle; when the ball is close, the offset is gradually released, otherwise the last few bricks pull the paddle away. It also added a tiny paddle-drift compensation for the one-step delay between action and paddle position.</p>
 <pre><code class="language-python">if score &gt;= 432 and stuck_release_horizon_steps &gt; 0:
     release_ratio = clip(steps_to_paddle / stuck_release_horizon_steps, 0.0, 1.0)
@@ -501,14 +501,14 @@ if score &gt;= 432 and ball_y &gt;= 170 and last_action == RIGHT:
 elif score &gt;= 432 and ball_y &gt;= 170 and last_action == LEFT:
     control_paddle_x = paddle_x - 2.0
 </code></pre>
-<video controls src="heuristic_breakout_ci3985ae2_score864_render210x160.mp4" width="360"></video>
+<video controls src="atari/breakout/heuristic_breakout_ci3985ae2_score864_render210x160.mp4" width="360"></video>
 
-<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_ci3985ae2_score864_render210x160.mp4">heuristic_breakout_ci3985ae2_score864_render210x160.mp4</a>.</p>
+<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_ci3985ae2_score864_render210x160.mp4">heuristic_breakout_ci3985ae2_score864_render210x160.mp4</a>.</p>
 <p>The final RAM default configuration verified at <code>864 / 864 / 864</code> across three episodes. Later, Codex migrated the same geometry controller back to pure image input: no RAM, only RGB segmentation for paddle, ball, and brick balance. The image-only version first scored <code>310</code>, then <code>428</code>, and finally reached <code>864</code> for the first time after seven local policy episodes, corresponding to <code>14,504</code> local policy environment steps, after lowering the threshold for the late-game "release stuck offset" behavior so it applied throughout.</p>
-<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_sample_efficiency.png"><img alt="Breakout sample efficiency" src="heuristic_breakout_sample_efficiency.png"></a></p>
+<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_sample_efficiency.png"><img alt="Breakout sample efficiency" src="atari/breakout/heuristic_breakout_sample_efficiency.png"></a></p>
 <p>This should not be described as "image-only from scratch to max score in 14.5K steps." The real process was that Codex first discovered the geometry controller, loop breaker, and late-game offset release in the RAM version. Once the structure was stable, it swapped the state-reading layer from RAM to RGB detectors. The <code>14.5K</code> number is the transfer budget for the image-only version.</p>
 <h4>Ant and HalfCheetah</h4>
-<p>Related artifacts: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant.py">heuristic_ant.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/ant_envpool.xml">ant_envpool.xml</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant_trials.jsonl">heuristic_ant_trials.jsonl</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant_trials_summary.csv">heuristic_ant_trials_summary.csv</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_halfcheetah_v5.py">heuristic_halfcheetah_v5.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_halfcheetah_v5_log.md">heuristic_halfcheetah_v5_log.md</a>.</p>
+<p>Related artifacts: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant.py">heuristic_ant.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/ant_envpool.xml">ant_envpool.xml</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant_trials.jsonl">heuristic_ant_trials.jsonl</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant_trials_summary.csv">heuristic_ant_trials_summary.csv</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/halfcheetah/heuristic_halfcheetah_v5.py">heuristic_halfcheetah_v5.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/halfcheetah/heuristic_halfcheetah_v5_log.md">heuristic_halfcheetah_v5_log.md</a>.</p>
 <p>Ant gives a different signal from Breakout. Breakout has intuitive geometry. Ant is continuous control, with 8 joint actions, and its failures are body dynamics rather than "missed the ball."</p>
 <p>I did not specify "use CPG" or "use MPC" at the beginning. The constraints were simply: do not train a neural network, make it locally reproducible, leave records for each round, and keep pushing the score up. Codex first read the EnvPool/Gymnasium Ant observations and rewards, confirmed action order, root velocity, torso orientation, joint positions, and joint velocities, then proposed the first rhythmic gait on its own.</p>
 <p>The first version was a four-leg phase oscillator: left and right legs in opposite phase, hip and ankle joints tracking sinusoidal target angles, with actions produced by a PD controller. It was not elegant, but it was already much stronger than random: the mean score over five random seeds was <code>2291</code>.</p>
@@ -564,19 +564,19 @@ ant_mpc_term001_ep1                     6054.5       100,000                term
 ant_mpc_default_adaptive_ep1            6146.2       106,300                speed-adaptive phase + stance
 </code></pre>
 <p>By the end, the policy had oscillator phase, stance ratio, speed adaptation, roll/pitch/yaw feedback, foot contact, short-horizon model rollouts, residual smoothing, terminal velocity cost, and warm-start plan decay. A human can write one or two of these modules, of course. But handling experiment records, code, videos, and failure directions at the same time, under a short iteration budget, is a different level of difficulty.</p>
-<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant_sample_efficiency.png"><img alt="Ant sample efficiency" src="heuristic_ant_sample_efficiency.png"></a></p>
-<video controls src="heuristic_ant_mpc_default_6146_render480.mp4" width="480"></video>
+<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant_sample_efficiency.png"><img alt="Ant sample efficiency" src="mujoco/ant/heuristic_ant_sample_efficiency.png"></a></p>
+<video controls src="mujoco/ant/heuristic_ant_mpc_default_6146_render480.mp4" width="480"></video>
 
-<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant_mpc_default_6146_render480.mp4">heuristic_ant_mpc_default_6146_render480.mp4</a>.</p>
+<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant_mpc_default_6146_render480.mp4">heuristic_ant_mpc_default_6146_render480.mp4</a>.</p>
 <p>HalfCheetah is another point of evidence in the same family. I reran a five-episode evaluation of <code>mpc-staged-tree-asym-pd-cpg</code> with seeds <code>100..104</code>; the mean was <code>11836.7</code>, with min <code>11735.0</code> and max <code>12041.2</code>. The policy uses interpretable gait/posture rules and online staged-tree MPC: first form a high-scoring gait through CPG/PD, then use short-horizon model scoring and a staged swing-amplitude schedule to adjust actions.</p>
-<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_halfcheetah_sample_efficiency.png"><img alt="HalfCheetah sample efficiency" src="heuristic_halfcheetah_sample_efficiency.png"></a></p>
+<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/halfcheetah/heuristic_halfcheetah_sample_efficiency.png"><img alt="HalfCheetah sample efficiency" src="mujoco/halfcheetah/heuristic_halfcheetah_sample_efficiency.png"></a></p>
 <h4>Atari57</h4>
-<p>Related artifacts: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_prompt_template.txt">atari57_prompt_template.txt</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_aggregate_curve_steps.csv">atari57_aggregate_curve_steps.csv</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_env_mode_summary.csv">atari57_env_mode_summary.csv</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/openrl_atari57_per_game_hns_comparison.csv">openrl_atari57_per_game_hns_comparison.csv</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_hns_normalization_inferred.csv">atari57_hns_normalization_inferred.csv</a>.</p>
+<p>Related artifacts: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_prompt_template.txt">atari57_prompt_template.txt</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_aggregate_curve_steps.csv">atari57_aggregate_curve_steps.csv</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_env_mode_summary.csv">atari57_env_mode_summary.csv</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/openrl_atari57_per_game_hns_comparison.csv">openrl_atari57_per_game_hns_comparison.csv</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_hns_normalization_inferred.csv">atari57_hns_normalization_inferred.csv</a>.</p>
 <p>Breakout and Ant are single-point stories. Atari57 asks what remains when the workflow leaves a few pretty examples. The setup was direct: run the same Codex workflow over the full Atari57 suite, with both <code>ram</code> and <code>native_obs</code> observation modes for every environment, and three independent repeats for each mode:</p>
 <pre><code class="language-text">57 games x 2 observation modes x 3 repeats = 342 coding-agent search trajectories
 </code></pre>
 <p>No human gave step-by-step hints during this batch. Each agent received the same template and different <code>ENV_ID / OBS_MODE / REPEAT_INDEX</code>, then ran until it stopped. Each run had to write <code>policy.py</code>, <code>trials.jsonl</code>, <code>summary.csv</code>, <code>sample_efficiency.png</code>, and <code>README.md</code>.</p>
-<p>The full prompt is in <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_prompt_template.txt">atari57_prompt_template.txt</a>. The core summary was:</p>
+<p>The full prompt is in <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_prompt_template.txt">atari57_prompt_template.txt</a>. The core summary was:</p>
 <details>
 <summary>Atari57 batch prompt summary</summary>
 <pre><code class="language-text">Goal: for one EnvPool Atari environment and one OBS_MODE, design and iterate a handwritten heuristic policy.
@@ -605,26 +605,26 @@ Stop rules:
 </code></pre>
 </details>
 <p>First look at environment-step curves. HNS means human-normalized score: each game's score is normalized against the human baseline before comparison. In the fully unattended batch, <code>native_obs</code> Atari median HNS reached <code>0.32</code> around <code>1M</code> steps, and <code>ram</code> reached <code>0.26</code>, clearly above the early PPO2 / CleanRL EnvPool PPO curves in the figure. Around <code>9.7M</code> steps, <code>native_obs</code> reached <code>0.81</code> and <code>ram</code> reached <code>0.59</code>. In the same comparison, the OpenRL Benchmark PPO2 / CleanRL EnvPool PPO median HNS curves are roughly <code>0.88 / 0.92</code> at <code>10M</code> steps.</p>
-<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_openrl_sample_efficiency_context.png"><img alt="Atari57 sample efficiency vs OpenRL Benchmark" src="atari57_openrl_sample_efficiency_context.png"></a></p>
+<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_openrl_sample_efficiency_context.png"><img alt="Atari57 sample efficiency vs OpenRL Benchmark" src="atari/atari57/atari57_openrl_sample_efficiency_context.png"></a></p>
 <p>This comparison is about environment interaction efficiency. It does not convert the cost of the coding agent reading logs, writing code, and watching videos into the total compute budget. The signal is still concrete: a very rough coding-agent batch workflow, with no human inspection of intermediate results, already pushes the Atari57 median into the neighborhood of these baselines.</p>
 <p>If we aggregate by taking the best input mode for each game at the end, Codex median HNS is <code>0.83</code>, OpenAI Baselines PPO2 is <code>0.80</code>, and CleanRL EnvPool PPO is <code>0.98</code>. If we relax further to best single run, Codex median HNS is <code>1.18</code>. This does not replace a strict training-curve comparison, but it shows more directly what level the unattended search eventually covered.</p>
 <p>Aggregate curves compress differences into one median, so I also looked at per-game HNS. On Breakout, Krull, DoubleDunk, Boxing, and DemonAttack, both heuristics and Deep RL baselines reach scores well above the human baseline. On Asterix, Jamesbond, Centipede, Bowling, Skiing, and Tennis, heuristics are relatively strong. On Atlantis, VideoPinball, UpNDown, Assault, RoadRunner, and StarGunner, PPO is clearly much stronger.</p>
-<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_per_game_hns_comparison.png"><img alt="Atari57 per-game HNS comparison" src="atari57_per_game_hns_comparison.png"></a></p>
+<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_per_game_hns_comparison.png"><img alt="Atari57 per-game HNS comparison" src="atari/atari57/atari57_per_game_hns_comparison.png"></a></p>
 <p>The most interesting part of Atari57 is that the source of sample efficiency changes. Traditional neural-network Atari learning has to relearn representation, credit assignment, and action meaning from high-dimensional inputs in every environment. Codex instead decomposes each environment into small maintainable program systems: aiming and dodging in shooters, bounce prediction in catching games, position rules in avoidance games, wrapper details, and each environment's own failed-experiment records.</p>
 <h4>Montezuma</h4>
-<p>Related artifacts: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma.py">heuristic_montezuma.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma_state_graph_search.py">heuristic_montezuma_state_graph_search.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma_400_policy.py">heuristic_montezuma_400_policy.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma_400_macros.json">heuristic_montezuma_400_macros.json</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma_400_metadata.json">heuristic_montezuma_400_metadata.json</a>.</p>
+<p>Related artifacts: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma.py">heuristic_montezuma.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma_state_graph_search.py">heuristic_montezuma_state_graph_search.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma_400_policy.py">heuristic_montezuma_400_policy.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma_400_macros.json">heuristic_montezuma_400_macros.json</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma_400_metadata.json">heuristic_montezuma_400_metadata.json</a>.</p>
 <p>Some environments are not a good fit for ordinary reactive heuristic policies. Montezuma's Revenge is the typical example.</p>
 <p>In an earlier standalone Montezuma search, state-graph search moved the key distance from <code>72</code> to <code>28</code>, but reward stayed at <code>0</code>. Later, in the Atari57 native-image batch, one unattended Codex run reached <code>400.0</code> points: the repaired best replay was <code>repair_replay_r1_t19734</code>, seed <code>10001</code>, using <code>1769</code> environment steps. It is essentially an open-loop route made of <code>86</code> macro-actions.</p>
-<video controls src="montezuma_400_render_seed10001_h264.mp4" width="360"></video>
+<video controls src="atari/montezuma/montezuma_400_render_seed10001_h264.mp4" width="360"></video>
 
-<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/montezuma_400_render_seed10001_h264.mp4">montezuma_400_render_seed10001_h264.mp4</a>.</p>
+<p>Video artifact: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/montezuma_400_render_seed10001_h264.mp4">montezuma_400_render_seed10001_h264.mp4</a>.</p>
 <p>Montezuma exposes an expressivity problem. A normal <code>policy.py</code> state machine has trouble representing this kind of route: actions must align with timing, failures need recovery, and intermediate states need ways to re-enter the plan. Some environments need composable macro-actions, recoverable search state, and perhaps a program structure better suited to long-horizon planning than ordinary <code>if else</code>.</p>
 <p>This kind of failure is valuable for HL. It tells us where the boundary is, and hints at the next layer of abstraction. Some feedback needs a new representation and a new program form before it can enter the system. For Montezuma, the next interface probably needs macro-actions, recoverable state, search, and long-term memory.</p>
 <h3 id="en-section-a-2">A.2 Reproduction Entrypoints</h3>
 <p>The commands below assume they are run from this article's directory, with dependencies already installed from <code>requirements.txt</code>. They check the representative results discussed above.</p>
 <h4>Pong 21</h4>
-<p>Reproduction entrypoint: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_pong.py">heuristic_pong.py</a>.</p>
-<pre><code class="language-bash">python heuristic_pong.py \
+<p>Reproduction entrypoint: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/pong/heuristic_pong.py">heuristic_pong.py</a>.</p>
+<pre><code class="language-bash">python atari/pong/heuristic_pong.py \
   --policy ram \
   --episodes 1 \
   --seed 0
@@ -635,7 +635,7 @@ Stop rules:
 <details>
 <summary>Reproduce 387: return the ball, but do not break the loop</summary>
 <pre><code class="language-bash">rm -f /tmp/repro_breakout_387.jsonl /tmp/repro_breakout_387.csv
-python heuristic_breakout.py \
+python atari/breakout/heuristic_breakout.py \
   --policy ram \
   --episodes 1 \
   --seed 0 \
@@ -660,7 +660,7 @@ python heuristic_breakout.py \
 <details>
 <summary>Reproduce 507: add stuck-loop perturbation</summary>
 <pre><code class="language-bash">rm -f /tmp/repro_breakout_507.jsonl /tmp/repro_breakout_507.csv
-python heuristic_breakout.py \
+python atari/breakout/heuristic_breakout.py \
   --policy ram \
   --episodes 1 \
   --seed 0 \
@@ -685,7 +685,7 @@ python heuristic_breakout.py \
 <details>
 <summary>Reproduce 839: handle fast low balls</summary>
 <pre><code class="language-bash">rm -f /tmp/repro_breakout_839.jsonl /tmp/repro_breakout_839.csv
-python heuristic_breakout.py \
+python atari/breakout/heuristic_breakout.py \
   --policy ram \
   --episodes 1 \
   --seed 0 \
@@ -709,9 +709,9 @@ python heuristic_breakout.py \
 <p>Expected output should include <code>score=839.0</code> and <code>mean=839.000</code>.</p>
 </details>
 <h4>Breakout 864</h4>
-<p>Reproduction entrypoint: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout.py">heuristic_breakout.py</a>.</p>
+<p>Reproduction entrypoint: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout.py">heuristic_breakout.py</a>.</p>
 <pre><code class="language-bash">rm -f /tmp/repro_breakout_864.jsonl /tmp/repro_breakout_864.csv
-python heuristic_breakout.py \
+python atari/breakout/heuristic_breakout.py \
   --policy ram \
   --episodes 1 \
   --seed 0 \
@@ -736,30 +736,30 @@ python heuristic_breakout.py \
 </code></pre>
 <p>Expected output should include <code>score=864.0</code> and <code>mean=864.000</code>.</p>
 <h4>Ant Default MPC Policy</h4>
-<p>Reproduction entrypoints: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant.py">heuristic_ant.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/ant_envpool.xml">ant_envpool.xml</a>.</p>
+<p>Reproduction entrypoints: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant.py">heuristic_ant.py</a>, <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/ant_envpool.xml">ant_envpool.xml</a>.</p>
 <pre><code class="language-bash">rm -f /tmp/repro_ant_6146_eval5.jsonl /tmp/repro_ant_6146_eval5.csv
-python heuristic_ant.py \
+python mujoco/ant/heuristic_ant.py \
   --policy mpc \
   --episodes 5 \
   --seed 0 \
   --max-steps 1000 \
-  --mujoco-xml-path ant_envpool.xml \
+  --mujoco-xml-path mujoco/ant/ant_envpool.xml \
   --trial-name repro_ant_6146_eval5 \
   --log-path /tmp/repro_ant_6146_eval5.jsonl \
   --summary-path /tmp/repro_ant_6146_eval5.csv
 </code></pre>
 <p>My local rerun produced <code>mean=6005.521</code>, <code>min=5776.805</code>, and <code>max=6146.208</code>.</p>
 <h4>HalfCheetah Staged-Tree MPC</h4>
-<p>Reproduction entrypoint: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_halfcheetah_v5.py">heuristic_halfcheetah_v5.py</a>.</p>
-<pre><code class="language-bash">python heuristic_halfcheetah_v5.py \
+<p>Reproduction entrypoint: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/halfcheetah/heuristic_halfcheetah_v5.py">heuristic_halfcheetah_v5.py</a>.</p>
+<pre><code class="language-bash">python mujoco/halfcheetah/heuristic_halfcheetah_v5.py \
   --policy mpc-staged-tree-asym-pd-cpg \
   --eval-episodes 5 \
   --eval-seed 100
 </code></pre>
 <p>My local rerun produced a five-episode mean of <code>11836.693</code>.</p>
 <h4>Montezuma 400-Point Replay</h4>
-<p>Reproduction entrypoint: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma_400_policy.py">heuristic_montezuma_400_policy.py</a>.</p>
-<pre><code class="language-bash">python heuristic_montezuma_400_policy.py \
+<p>Reproduction entrypoint: <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma_400_policy.py">heuristic_montezuma_400_policy.py</a>.</p>
+<pre><code class="language-bash">python atari/montezuma/heuristic_montezuma_400_policy.py \
   --metadata-out /tmp/repro_montezuma_400.json
 </code></pre>
 <p>Expected output should include <code>"score": 400.0</code> and <code>"env_steps": 1769</code>. This is a boundary case; it should not be read as a general Montezuma policy.</p>
@@ -985,7 +985,7 @@ python heuristic_ant.py \
 </code></pre>
 <p>到这里，任务的形状已经变了。最后产出的东西从一个策略文件，变成了一套还能继续改的实验系统。它有探测器，有记录，有回放，有失败模式，也有下一轮该怎么改的线索。</p>
 <h4>Breakout</h4>
-<p>相关 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout.py">heuristic_breakout.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_trials.jsonl">heuristic_breakout_trials.jsonl</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_trials_summary.csv">heuristic_breakout_trials_summary.csv</a>。</p>
+<p>相关 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout.py">heuristic_breakout.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_trials.jsonl">heuristic_breakout_trials.jsonl</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_trials_summary.csv">heuristic_breakout_trials_summary.csv</a>。</p>
 <p>Breakout 表面上是几何问题：球在哪里，挡板在哪里，球撞墙以后会落到哪里。麻烦在后半段。策略可以一直接到球，却不再打到新砖，分数卡在一个稳定循环里。</p>
 <p>Codex 第一轮先确认动作空间和观测形状，再从 RGB 画面里找挡板、球、砖块颜色，然后用这些图像标签去扫 128 个 RAM 字节。早期实验记录大概是这样：</p>
 <pre><code class="language-text">trial_name                 score   cumulative_env_steps   note
@@ -996,9 +996,9 @@ baseline_v0                99      16,303                 initial RAM intercept
 tunnel0_v1                387      43,303                 no tunnel offset
 </code></pre>
 <p><code>387</code> 是第一个很容易骗过人的局部高分。策略已经能稳定接球，但它把球送进了一个周期：不会死，也不会继续清砖。人手写到这里，很容易继续调“接球精度”。Codex 看了视频和最后几十步轨迹后，把问题定位到球路缺少扰动。</p>
-<video controls src="heuristic_breakout_score387_tunnel0_render210x160.mp4" width="360"></video>
+<video controls src="atari/breakout/heuristic_breakout_score387_tunnel0_render210x160.mp4" width="360"></video>
 
-<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_score387_tunnel0_render210x160.mp4">heuristic_breakout_score387_tunnel0_render210x160.mp4</a>。</p>
+<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_score387_tunnel0_render210x160.mp4">heuristic_breakout_score387_tunnel0_render210x160.mp4</a>。</p>
 <p>第一个有效机制是打破循环：如果连续很久没有奖励，就在预测落点上周期性加偏移，把球从局部循环里打出去。这一改把分数从 <code>387</code> 推到 <code>507</code>。</p>
 <pre><code class="language-python">if steps_since_reward &gt;= stuck_trigger_steps:
     phase = stuck_offset_index % 4
@@ -1013,9 +1013,9 @@ tunnel0_v1                387      43,303                 no tunnel offset
 else:
     offset = 0.0
 </code></pre>
-<video controls src="heuristic_breakout_score507_stuckbreaker_render210x160.mp4" width="360"></video>
+<video controls src="atari/breakout/heuristic_breakout_score507_stuckbreaker_render210x160.mp4" width="360"></video>
 
-<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_score507_stuckbreaker_render210x160.mp4">heuristic_breakout_score507_stuckbreaker_render210x160.mp4</a>。</p>
+<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_score507_stuckbreaker_render210x160.mp4">heuristic_breakout_score507_stuckbreaker_render210x160.mp4</a>。</p>
 <p>后来又遇到另一个失败模式：高速低位球如果按普通截距追，挡板会被过度前视带偏。Codex 加了 <code>fast_low_ball_lead_steps=3</code>，分数从 <code>507</code> 跳到 <code>839</code>。</p>
 <pre><code class="language-python">if vy &gt; 0.1 and ball_y &lt;= paddle_y:
     steps_to_paddle = max((paddle_y - ball_y) / vy, 0.0)
@@ -1026,9 +1026,9 @@ elif vy &gt;= fast_ball_min_vy:
 else:
     target_x = ball_x + chase_lead_steps * vx
 </code></pre>
-<video controls src="heuristic_breakout_score839_fastlead_render210x160.mp4" width="360"></video>
+<video controls src="atari/breakout/heuristic_breakout_score839_fastlead_render210x160.mp4" width="360"></video>
 
-<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_score839_fastlead_render210x160.mp4">heuristic_breakout_score839_fastlead_render210x160.mp4</a>。</p>
+<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_score839_fastlead_render210x160.mp4">heuristic_breakout_score839_fastlead_render210x160.mp4</a>。</p>
 <p>从 <code>839</code> 到 <code>864</code>，更像是在照料一个已经变复杂的系统。Codex 试了死区、发球偏移、卡住偏移、砖块平衡偏置、前视步数，很多方向都没用。最后起作用的是一个后期条件：分数超过第一面墙以后，卡住偏移只在离挡板还远的时候生效；快接球时把偏移逐步收掉，不然最后几块砖阶段会把挡板带偏。同时它加了一个很小的挡板漂移补偿，用来补动作和挡板位置之间的一步延迟。</p>
 <pre><code class="language-python">if score &gt;= 432 and stuck_release_horizon_steps &gt; 0:
     release_ratio = clip(steps_to_paddle / stuck_release_horizon_steps, 0.0, 1.0)
@@ -1039,14 +1039,14 @@ if score &gt;= 432 and ball_y &gt;= 170 and last_action == RIGHT:
 elif score &gt;= 432 and ball_y &gt;= 170 and last_action == LEFT:
     control_paddle_x = paddle_x - 2.0
 </code></pre>
-<video controls src="heuristic_breakout_ci3985ae2_score864_render210x160.mp4" width="360"></video>
+<video controls src="atari/breakout/heuristic_breakout_ci3985ae2_score864_render210x160.mp4" width="360"></video>
 
-<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_ci3985ae2_score864_render210x160.mp4">heuristic_breakout_ci3985ae2_score864_render210x160.mp4</a>。</p>
+<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_ci3985ae2_score864_render210x160.mp4">heuristic_breakout_ci3985ae2_score864_render210x160.mp4</a>。</p>
 <p>最终 RAM 默认配置三局验证是 <code>864 / 864 / 864</code>。后面 Codex 又把同一套几何控制迁移回纯图像输入：不用 RAM，只用 RGB 分割找挡板、球和砖块平衡。纯图像版本先是 <code>310</code>，然后 <code>428</code>，最后把后期“卡住偏移逐步收掉”的阈值放低到全程生效，7 个策略本地回合后第一次到 <code>864</code>，对应 <code>14,504</code> 个策略本地环境步。</p>
-<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout_sample_efficiency.png"><img alt="Breakout 样本效率" src="heuristic_breakout_sample_efficiency.png"></a></p>
+<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout_sample_efficiency.png"><img alt="Breakout 样本效率" src="atari/breakout/heuristic_breakout_sample_efficiency.png"></a></p>
 <p>这里不能写成“纯图像从零 14.5K 步到满分”。真实过程是：Codex 先在 RAM 版本里摸出了几何控制、打破循环、后期收偏移这些结构；等结构稳定以后，再把状态读取层从 RAM 换成 RGB 检测器。纯图像的 <code>14.5K</code> 是迁移预算。</p>
 <h4>Ant 和 HalfCheetah</h4>
-<p>相关 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant.py">heuristic_ant.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/ant_envpool.xml">ant_envpool.xml</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant_trials.jsonl">heuristic_ant_trials.jsonl</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant_trials_summary.csv">heuristic_ant_trials_summary.csv</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_halfcheetah_v5.py">heuristic_halfcheetah_v5.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_halfcheetah_v5_log.md">heuristic_halfcheetah_v5_log.md</a>。</p>
+<p>相关 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant.py">heuristic_ant.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/ant_envpool.xml">ant_envpool.xml</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant_trials.jsonl">heuristic_ant_trials.jsonl</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant_trials_summary.csv">heuristic_ant_trials_summary.csv</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/halfcheetah/heuristic_halfcheetah_v5.py">heuristic_halfcheetah_v5.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/halfcheetah/heuristic_halfcheetah_v5_log.md">heuristic_halfcheetah_v5_log.md</a>。</p>
 <p>Ant 的信号和 Breakout 不一样。Breakout 的几何结构很直观；Ant 是连续控制，动作是 8 个关节，失败模式也从“球没接到”变成了身体动力学问题。</p>
 <p>我没有一开始就指定“用 CPG”或“用 MPC”。要求只有几条：别训练神经网络，能本地复现，每轮实验留下记录，继续把分数往上推。Codex 先读 EnvPool/Gymnasium 的 Ant 观测和回报，确认动作顺序、根部速度、躯干朝向、关节位置和关节速度，然后自己提出第一版节律步态。</p>
 <p>第一版是四腿相位振荡器：左右腿反相，髋关节和踝关节跟踪正弦目标角，动作由 PD 控制器给出。它不优雅，但一上来就比随机强很多，5 个随机种子的平均分是 <code>2291</code>。</p>
@@ -1102,19 +1102,19 @@ ant_mpc_term001_ep1                     6054.5       100,000                终�
 ant_mpc_default_adaptive_ep1            6146.2       106,300                速度自适应相位 + 支撑期
 </code></pre>
 <p>到最后，策略里有振荡器相位、支撑期比例、速度自适应、滚转/俯仰/偏航反馈、脚部接触、短视窗模型内展开、残差平滑、终端速度代价、热启动计划衰减。人类当然能写其中一两个模块，但要在短时间内同时照顾实验记录、代码、视频和失败方向，难度完全不同。</p>
-<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant_sample_efficiency.png"><img alt="Ant 样本效率" src="heuristic_ant_sample_efficiency.png"></a></p>
-<video controls src="heuristic_ant_mpc_default_6146_render480.mp4" width="480"></video>
+<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant_sample_efficiency.png"><img alt="Ant 样本效率" src="mujoco/ant/heuristic_ant_sample_efficiency.png"></a></p>
+<video controls src="mujoco/ant/heuristic_ant_mpc_default_6146_render480.mp4" width="480"></video>
 
-<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant_mpc_default_6146_render480.mp4">heuristic_ant_mpc_default_6146_render480.mp4</a>。</p>
+<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant_mpc_default_6146_render480.mp4">heuristic_ant_mpc_default_6146_render480.mp4</a>。</p>
 <p>HalfCheetah 是同一类证据的另一个点。我重新跑了 <code>mpc-staged-tree-asym-pd-cpg</code> 的 5 局复测，seeds <code>100..104</code> 的结果是均值 <code>11836.7</code>、最小值 <code>11735.0</code>、最大值 <code>12041.2</code>。策略靠的是可解释的步态/姿态规则和在线 staged-tree MPC：先用 CPG/PD 形成高分步态，再用短视窗模型评分和 staged swing-amplitude schedule 修正动作。</p>
-<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_halfcheetah_sample_efficiency.png"><img alt="HalfCheetah 样本效率" src="heuristic_halfcheetah_sample_efficiency.png"></a></p>
+<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/halfcheetah/heuristic_halfcheetah_sample_efficiency.png"><img alt="HalfCheetah 样本效率" src="mujoco/halfcheetah/heuristic_halfcheetah_sample_efficiency.png"></a></p>
 <h4>Atari57</h4>
-<p>相关 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_prompt_template.txt">atari57_prompt_template.txt</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_aggregate_curve_steps.csv">atari57_aggregate_curve_steps.csv</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_env_mode_summary.csv">atari57_env_mode_summary.csv</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/openrl_atari57_per_game_hns_comparison.csv">openrl_atari57_per_game_hns_comparison.csv</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_hns_normalization_inferred.csv">atari57_hns_normalization_inferred.csv</a>。</p>
+<p>相关 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_prompt_template.txt">atari57_prompt_template.txt</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_aggregate_curve_steps.csv">atari57_aggregate_curve_steps.csv</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_env_mode_summary.csv">atari57_env_mode_summary.csv</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/openrl_atari57_per_game_hns_comparison.csv">openrl_atari57_per_game_hns_comparison.csv</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_hns_normalization_inferred.csv">atari57_hns_normalization_inferred.csv</a>。</p>
 <p>Breakout 和 Ant 都是单点故事。Atari57 想看的，是这套工作流离开单个漂亮案例以后还剩多少。做法很直接：把同一套 Codex 流程扔到整套 Atari57 上，每个环境同时跑 <code>ram</code> 和 <code>native_obs</code> 两种输入，每种输入跑 3 个独立重复。总共是：</p>
 <pre><code class="language-text">57 个游戏 x 2 种输入 x 3 次运行 = 342 条 coding-agent 搜索轨迹
 </code></pre>
 <p>这组实验没有人在旁边一点点提示。每个 agent 拿到同一个模板和不同的 <code>ENV_ID / OBS_MODE / REPEAT_INDEX</code>，然后自己执行到停止。每个 run 都要写 <code>policy.py</code>、<code>trials.jsonl</code>、<code>summary.csv</code>、<code>sample_efficiency.png</code> 和 <code>README.md</code>。</p>
-<p>完整提示词放在 <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_prompt_template.txt">atari57_prompt_template.txt</a>。核心摘要是：</p>
+<p>完整提示词放在 <a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_prompt_template.txt">atari57_prompt_template.txt</a>。核心摘要是：</p>
 <details>
 <summary>Atari57 批量提示词摘要</summary>
 <pre><code class="language-text">目标：只针对一个 EnvPool Atari 环境，在给定 OBS_MODE 下自己设计并迭代手写 heuristic policy。
@@ -1143,26 +1143,26 @@ ant_mpc_default_adaptive_ep1            6146.2       106,300                速�
 </code></pre>
 </details>
 <p>先看环境步曲线。HNS 是 human-normalized score，也就是把每个游戏分数按人类基线归一化以后再比较。在完全无人工介入的批量运行里，<code>native_obs</code> 到 <code>1M</code> 步附近的 Atari median HNS 已经到 <code>0.32</code>，<code>ram</code> 是 <code>0.26</code>，明显高于图里 PPO2 / CleanRL EnvPool PPO 的早期曲线；到 <code>9.7M</code> 步附近，<code>native_obs</code> 是 <code>0.81</code>，<code>ram</code> 是 <code>0.59</code>。同一张对比里，OpenRL Benchmark 保存的 PPO2 / CleanRL EnvPool PPO median HNS 曲线到 <code>10M</code> 步大约是 <code>0.88 / 0.92</code>。</p>
-<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_openrl_sample_efficiency_context.png"><img alt="Atari57 样本效率对比 OpenRL Benchmark" src="atari57_openrl_sample_efficiency_context.png"></a></p>
+<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_openrl_sample_efficiency_context.png"><img alt="Atari57 样本效率对比 OpenRL Benchmark" src="atari/atari57/atari57_openrl_sample_efficiency_context.png"></a></p>
 <p>这里比较的是环境交互效率；coding agent 读日志、写代码和看视频的开销没有折算进总计算成本。它给出的信号很具体：一个还很粗糙的 coding agent 批量流程，在完全不看中途结果的情况下，已经能把 Atari57 的中位数推进到接近这些 baseline 的区间。</p>
 <p>如果换成每个游戏最终取 best input 的汇总口径，Codex median HNS 是 <code>0.83</code>，OpenAI Baselines PPO2 是 <code>0.80</code>，CleanRL EnvPool PPO 是 <code>0.98</code>；如果再放宽到 best single run，Codex median HNS 是 <code>1.18</code>。这个口径不能替代严格训练曲线比较，但能更直接地说明这批无人值守搜索最后覆盖到了什么水平。</p>
 <p>聚合曲线会把差异压到一个中位数里，所以我又看了每个游戏自己的 HNS。Breakout、Krull、DoubleDunk、Boxing、DemonAttack 这些游戏里，heuristic 和 Deep RL baseline 都能拿到明显高于人类基线的分数；Asterix、Jamesbond、Centipede、Bowling、Skiing、Tennis 这类游戏里 heuristic 相对突出；Atlantis、VideoPinball、UpNDown、Assault、RoadRunner、StarGunner 上 PPO 明显强很多。</p>
-<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari57_per_game_hns_comparison.png"><img alt="Atari57 每个游戏 HNS 对比" src="atari57_per_game_hns_comparison.png"></a></p>
+<p><a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/atari57/atari57_per_game_hns_comparison.png"><img alt="Atari57 每个游戏 HNS 对比" src="atari/atari57/atari57_per_game_hns_comparison.png"></a></p>
 <p>Atari57 最有意思的地方，是样本效率的来源变了。传统神经网络 Atari 学习要在每个环境里从高维输入重新学表示、信用分配和动作含义；Codex 做的是把环境拆成可维护的小程序系统：射击游戏的瞄准/躲避，接球游戏的反弹，躲避游戏的位置规则，环境包装器细节，以及每个环境自己的失败实验记录。</p>
 <h4>Montezuma</h4>
-<p>相关 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma.py">heuristic_montezuma.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma_state_graph_search.py">heuristic_montezuma_state_graph_search.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma_400_policy.py">heuristic_montezuma_400_policy.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma_400_macros.json">heuristic_montezuma_400_macros.json</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma_400_metadata.json">heuristic_montezuma_400_metadata.json</a>。</p>
+<p>相关 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma.py">heuristic_montezuma.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma_state_graph_search.py">heuristic_montezuma_state_graph_search.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma_400_policy.py">heuristic_montezuma_400_policy.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma_400_macros.json">heuristic_montezuma_400_macros.json</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma_400_metadata.json">heuristic_montezuma_400_metadata.json</a>。</p>
 <p>有些环境不适合普通反应式启发式策略。Montezuma's Revenge 是典型例子。</p>
 <p>之前那轮单独搜 Montezuma 的状态图搜索能把钥匙距离从 <code>72</code> 推到 <code>28</code>，但奖励仍然是 <code>0</code>。后面 Atari57 的纯图像批量实验里，有一条无人值守 Codex run 到了 <code>400.0</code> 分：修复后的最佳回放是 <code>repair_replay_r1_t19734</code>，seed 是 <code>10001</code>，用了 <code>1769</code> 个环境步，本质是一条 <code>86</code> 个宏动作组成的开环路线。</p>
-<video controls src="montezuma_400_render_seed10001_h264.mp4" width="360"></video>
+<video controls src="atari/montezuma/montezuma_400_render_seed10001_h264.mp4" width="360"></video>
 
-<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/montezuma_400_render_seed10001_h264.mp4">montezuma_400_render_seed10001_h264.mp4</a>。</p>
+<p>视频 artifact：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/montezuma_400_render_seed10001_h264.mp4">montezuma_400_render_seed10001_h264.mp4</a>。</p>
 <p>Montezuma 暴露的是表达力问题。普通 <code>policy.py</code> 状态机很难装下这类路线：动作必须对齐时机，失败后要能恢复，中间状态还要能重新进入计划。有些环境需要可组合宏动作、可恢复搜索状态，甚至需要一种比普通 <code>if else</code> 更适合长期规划的程序结构。</p>
 <p>这类失败对 HL 很有价值。它告诉我们边界在哪里，也提示下一层抽象大概该长什么样。有些反馈需要新的表示和新的程序形态，才进得了系统。Montezuma 指向的下一层接口，大概会包括宏动作、可恢复状态、搜索和长期记忆。</p>
 <h3 id="zh-section-a-2">A.2 复现入口</h3>
 <p>下面这些命令默认在本文所在目录运行，依赖已经按 <code>requirements.txt</code> 装好，用来检查前面提到的几个代表性结果。</p>
 <h4>Pong 21</h4>
-<p>复现入口：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_pong.py">heuristic_pong.py</a>。</p>
-<pre><code class="language-bash">python heuristic_pong.py \
+<p>复现入口：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/pong/heuristic_pong.py">heuristic_pong.py</a>。</p>
+<pre><code class="language-bash">python atari/pong/heuristic_pong.py \
   --policy ram \
   --episodes 1 \
   --seed 0
@@ -1173,7 +1173,7 @@ ant_mpc_default_adaptive_ep1            6146.2       106,300                速�
 <details>
 <summary>复现 387 分：只接球，不打破循环</summary>
 <pre><code class="language-bash">rm -f /tmp/repro_breakout_387.jsonl /tmp/repro_breakout_387.csv
-python heuristic_breakout.py \
+python atari/breakout/heuristic_breakout.py \
   --policy ram \
   --episodes 1 \
   --seed 0 \
@@ -1198,7 +1198,7 @@ python heuristic_breakout.py \
 <details>
 <summary>复现 507 分：加入卡住循环扰动</summary>
 <pre><code class="language-bash">rm -f /tmp/repro_breakout_507.jsonl /tmp/repro_breakout_507.csv
-python heuristic_breakout.py \
+python atari/breakout/heuristic_breakout.py \
   --policy ram \
   --episodes 1 \
   --seed 0 \
@@ -1223,7 +1223,7 @@ python heuristic_breakout.py \
 <details>
 <summary>复现 839 分：处理高速低位球</summary>
 <pre><code class="language-bash">rm -f /tmp/repro_breakout_839.jsonl /tmp/repro_breakout_839.csv
-python heuristic_breakout.py \
+python atari/breakout/heuristic_breakout.py \
   --policy ram \
   --episodes 1 \
   --seed 0 \
@@ -1247,9 +1247,9 @@ python heuristic_breakout.py \
 <p>期望输出里应该包含 <code>score=839.0</code> 和 <code>mean=839.000</code>。</p>
 </details>
 <h4>Breakout 864</h4>
-<p>复现入口：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_breakout.py">heuristic_breakout.py</a>。</p>
+<p>复现入口：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/breakout/heuristic_breakout.py">heuristic_breakout.py</a>。</p>
 <pre><code class="language-bash">rm -f /tmp/repro_breakout_864.jsonl /tmp/repro_breakout_864.csv
-python heuristic_breakout.py \
+python atari/breakout/heuristic_breakout.py \
   --policy ram \
   --episodes 1 \
   --seed 0 \
@@ -1274,30 +1274,30 @@ python heuristic_breakout.py \
 </code></pre>
 <p>期望输出里应该包含 <code>score=864.0</code> 和 <code>mean=864.000</code>。</p>
 <h4>Ant 默认 MPC 策略</h4>
-<p>复现入口：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_ant.py">heuristic_ant.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/ant_envpool.xml">ant_envpool.xml</a>。</p>
+<p>复现入口：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/heuristic_ant.py">heuristic_ant.py</a>、<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/ant/ant_envpool.xml">ant_envpool.xml</a>。</p>
 <pre><code class="language-bash">rm -f /tmp/repro_ant_6146_eval5.jsonl /tmp/repro_ant_6146_eval5.csv
-python heuristic_ant.py \
+python mujoco/ant/heuristic_ant.py \
   --policy mpc \
   --episodes 5 \
   --seed 0 \
   --max-steps 1000 \
-  --mujoco-xml-path ant_envpool.xml \
+  --mujoco-xml-path mujoco/ant/ant_envpool.xml \
   --trial-name repro_ant_6146_eval5 \
   --log-path /tmp/repro_ant_6146_eval5.jsonl \
   --summary-path /tmp/repro_ant_6146_eval5.csv
 </code></pre>
 <p>我本地重跑时是 <code>mean=6005.521</code>、<code>min=5776.805</code>、<code>max=6146.208</code>。</p>
 <h4>HalfCheetah staged-tree MPC</h4>
-<p>复现入口：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_halfcheetah_v5.py">heuristic_halfcheetah_v5.py</a>。</p>
-<pre><code class="language-bash">python heuristic_halfcheetah_v5.py \
+<p>复现入口：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/mujoco/halfcheetah/heuristic_halfcheetah_v5.py">heuristic_halfcheetah_v5.py</a>。</p>
+<pre><code class="language-bash">python mujoco/halfcheetah/heuristic_halfcheetah_v5.py \
   --policy mpc-staged-tree-asym-pd-cpg \
   --eval-episodes 5 \
   --eval-seed 100
 </code></pre>
 <p>我本地重跑时 5 局均值是 <code>11836.693</code>。</p>
 <h4>Montezuma 400 分回放</h4>
-<p>复现入口：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/heuristic_montezuma_400_policy.py">heuristic_montezuma_400_policy.py</a>。</p>
-<pre><code class="language-bash">python heuristic_montezuma_400_policy.py \
+<p>复现入口：<a href="https://github.com/Trinkle23897/learning-beyond-gradients/blob/main/atari/montezuma/heuristic_montezuma_400_policy.py">heuristic_montezuma_400_policy.py</a>。</p>
+<pre><code class="language-bash">python atari/montezuma/heuristic_montezuma_400_policy.py \
   --metadata-out /tmp/repro_montezuma_400.json
 </code></pre>
 <p>期望输出里应该包含 <code>"score": 400.0</code> 和 <code>"env_steps": 1769</code>。这条是边界案例，不要把它理解成通用 Montezuma 策略。</p>

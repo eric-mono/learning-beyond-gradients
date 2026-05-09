@@ -69,13 +69,12 @@ The workflow does not publish the whole repository as the website root. It build
 
 The repository includes the files needed to inspect and reproduce the article's representative results:
 
-- Pong policy script.
-- Breakout policy, trial summaries, sample-efficiency figure, and checkpoint videos.
-- Ant policy, minimal extracted Ant policy, trial summaries, MuJoCo XML, sample-efficiency figure, and final-policy video.
-- HalfCheetah policy script and iteration log.
-- Montezuma exploratory policies, state/archive search scripts, summaries, probe images, plus the recovered Atari57 400-point native-image policy and replay video.
-- Atari57 aggregate/per-game figures and CSV summaries.
-- The Atari57 batch prompt template used for unattended Codex CLI runs.
+- `atari/pong/`: Pong policy script.
+- `atari/breakout/`: Breakout policy, trial summaries, sample-efficiency figure, and checkpoint videos.
+- `atari/montezuma/`: Montezuma exploratory policies, state/archive search scripts, summaries, probe images, plus the recovered Atari57 400-point native-image policy and replay video.
+- `atari/atari57/`: Atari57 aggregate/per-game figures, CSV summaries, and the batch prompt template used for unattended Codex CLI runs.
+- `mujoco/ant/`: Ant policy, minimal extracted Ant policy, trial summaries, MuJoCo XML, sample-efficiency figure, and final-policy video.
+- `mujoco/halfcheetah/`: HalfCheetah policy script, iteration log, and sample-efficiency figure.
 
 The article appendix contains reproduction commands for five representative results. Those commands assume they are run from the repository root after cloning this repo.
 
@@ -83,10 +82,10 @@ The article appendix contains reproduction commands for five representative resu
 
 The experiments were written against EnvPool `1.1.1`. The article commands assume the relevant Python environment already has EnvPool and the Atari/MuJoCo runtime dependencies installed.
 
-For Ant, `ant_envpool.xml` must stay next to `heuristic_ant.py`, because the reproduction command references it as:
+For Ant, `ant_envpool.xml` stays next to `heuristic_ant.py` under `mujoco/ant/`. The reproduction command references it as:
 
 ```bash
---mujoco-xml-path ant_envpool.xml
+--mujoco-xml-path mujoco/ant/ant_envpool.xml
 ```
 
 ## Montezuma 400-Point Replay
@@ -94,8 +93,8 @@ For Ant, `ant_envpool.xml` must stay next to `heuristic_ant.py`, because the rep
 The Atari57 batch found one `MontezumaRevenge-v5` native-image run that reached `400.0` points. The route is packaged as a standalone open-loop replay:
 
 ```bash
-python3 heuristic_montezuma_400_policy.py \
-  --metadata-out heuristic_montezuma_400_replay_result.json
+python3 atari/montezuma/heuristic_montezuma_400_policy.py \
+  --metadata-out atari/montezuma/heuristic_montezuma_400_replay_result.json
 ```
 
 Expected result:
@@ -109,10 +108,10 @@ seed = 10001
 To regenerate the video:
 
 ```bash
-python3 heuristic_montezuma_400_policy.py \
-  --record-mp4 montezuma_400_render_seed10001.mp4 \
-  --frame0-png montezuma_400_render_seed10001_frame0.png \
-  --metadata-out montezuma_400_render_seed10001_meta.json
+python3 atari/montezuma/heuristic_montezuma_400_policy.py \
+  --record-mp4 atari/montezuma/montezuma_400_render_seed10001.mp4 \
+  --frame0-png atari/montezuma/montezuma_400_render_seed10001_frame0.png \
+  --metadata-out atari/montezuma/montezuma_400_render_seed10001_meta.json
 ```
 
 ## Citation

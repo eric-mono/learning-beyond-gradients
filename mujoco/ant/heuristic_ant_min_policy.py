@@ -18,12 +18,7 @@ import mujoco
 import numpy as np
 
 
-XML_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "third_party"
-    / "mujoco_gym_xml_patches"
-    / "ant_envpool.xml"
-)
+XML_PATH = Path(__file__).resolve().parent / "ant_envpool.xml"
 
 Q_INDEX = np.asarray([6, 7, 0, 1, 2, 3, 4, 5], dtype=np.int64)
 LEG_PHASE = np.asarray([0.0, math.pi, 0.0, math.pi], dtype=np.float64)

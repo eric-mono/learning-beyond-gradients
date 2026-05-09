@@ -36,6 +36,7 @@ import numpy as np
 ENV_ID = "HalfCheetah-v5"
 EPISODE_STEPS = 1000
 DT = 0.05
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 PolicyName = Literal[
     "open-loop",
@@ -942,7 +943,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--elites", type=int, default=10)
     parser.add_argument("--seed", type=int, default=19)
-    parser.add_argument("--search-log", default="examples/heuristic_halfcheetah_v5_search.jsonl")
+    parser.add_argument(
+        "--search-log", default=str(SCRIPT_DIR / "heuristic_halfcheetah_v5_search.jsonl")
+    )
     parser.add_argument("--save-best", default="")
     parser.add_argument("--cem-alpha", type=float, default=0.5)
     parser.add_argument("--gait-std", type=float, default=0.18)

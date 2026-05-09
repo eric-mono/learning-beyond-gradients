@@ -43,12 +43,7 @@ import numpy as np
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_LOG_PATH = SCRIPT_DIR / "heuristic_ant_trials.jsonl"
 DEFAULT_SUMMARY_PATH = SCRIPT_DIR / "heuristic_ant_trials_summary.csv"
-DEFAULT_MUJOCO_XML_PATH = (
-    SCRIPT_DIR.parent
-    / "third_party"
-    / "mujoco_gym_xml_patches"
-    / "ant_envpool.xml"
-)
+DEFAULT_MUJOCO_XML_PATH = SCRIPT_DIR / "ant_envpool.xml"
 
 ANT_Q_INDEX = np.asarray([6, 7, 0, 1, 2, 3, 4, 5], dtype=np.int64)
 ANT_LEG_PHASE = np.asarray([0.0, math.pi, 0.0, math.pi], dtype=np.float64)
