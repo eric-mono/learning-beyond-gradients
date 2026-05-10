@@ -402,6 +402,22 @@ HalfCheetah 是同一类证据的另一个点。我重新跑了 `mpc-staged-tree
 
 [![HalfCheetah 样本效率](mujoco/halfcheetah/heuristic_halfcheetah_sample_efficiency.png)][heuristic_halfcheetah_sample_efficiency.png]
 
+#### VizDoom
+
+相关 artifact：[heuristic_vizdoom_d1_cv.py]、[heuristic_vizdoom_d3_cv.py]、[record_vizdoom_d3_cv.py]、[d1_cv_10seed_render_35fps.mp4]、[d3_cv_best_10seed_render_35fps.mp4]。
+
+D1 Basic 是先验证“只要能等到合适时机吃血包，reward 就接近上限”的小实验。我先用 object/info 版本确认行为上限，10 seeds 接近 `1.01`；然后把不可复现的信息删掉，只保留 pip EnvPool、`render()` 屏幕像素和公开的 `HEALTH`。最终纯 CV 版用亮度阈值、形态学 close/dilate 和连通域找 medikit，用 bbox 中心决定转向/前进；血量还高且离血包太近时先 staging，等掉血后再吃。10 seeds 是 `mean=0.9441`、`min=0.2900`。
+
+<video controls src="vizdoom/d1_cv_10seed_render_35fps.mp4" width="480"></video>
+
+视频 artifact：[d1_cv_10seed_render_35fps.mp4]。
+
+D3 Battle 更接近 FPS smoke policy：它不是背地图，而是把行为拆成三个闭环：看见怪就杀、低血/低弹时找补给、长时间没目标时高速探索。屏幕侧用 cv2/NumPy 做颜色阈值和连通域，提取 enemy candidate、ammo/health item candidate、墙面/洞口的暗区比例；EnvPool info 只用公开 game variables，比如 `HEALTH`、`AMMO2`、`HITCOUNT`、`DAMAGECOUNT`、`KILLCOUNT`。迭代方式是每次并行跑 10 个 seed，再直接用 `render()` 录 35fps 10-grid 视频看失败类型。早期试过地图、object info 和 seed 特判，后面都删掉了；保留下来的是屏幕 CV + 公开变量的闭环控制。10 seeds 是 `mean=557.0`、`min=440.0`。
+
+<video controls src="vizdoom/d3_cv_best_10seed_render_35fps.mp4" width="480"></video>
+
+视频 artifact：[d3_cv_best_10seed_render_35fps.mp4]。
+
 #### Atari57
 
 相关 artifact：[atari57_prompt_template.txt]、[atari57_aggregate_curve_steps.csv]、[atari57_env_mode_summary.csv]、[openrl_atari57_per_game_hns_comparison.csv]、[atari57_hns_normalization_inferred.csv]。
@@ -653,43 +669,7 @@ python mujoco/halfcheetah/heuristic_halfcheetah_v5.py \
 
 我本地重跑时 5 局均值是 `11836.693`。
 
-#### VizDoom D3 Battle CV 策略
-
-相关 artifact：[heuristic_vizdoom_d3_cv.py]、[record_vizdoom_d3_cv.py]、[d3_cv_best_10seed_render_35fps.mp4]。
-
-这个 heuristic 的实现不是“背地图”，而是把 Battle 拆成三个闭环：看见怪就杀、低血/低弹时找补给、长时间没目标时高速探索。屏幕侧用 cv2/NumPy 做颜色阈值和连通域，分别提取 enemy candidate、ammo/health item candidate、墙面/洞口的暗区比例；EnvPool info 只用公开 game variables，比如 `HEALTH`、`AMMO2`、`HITCOUNT`、`DAMAGECOUNT`、`KILLCOUNT`。动作侧则是一个状态机：敌人在画面里就转向、压枪、射击；补给优先级够高就走过去；没目标时按 `SPEED + MOVE_FORWARD` 扩散探索，画面差分显示卡住或撞墙时就反向/转身，黑乎乎的开口会提高继续冲进去的优先级。
-
-迭代方式基本是每次并行跑 10 个 seed，再直接用 `render()` 录 35fps 的 10-grid 视频看失败类型。早期版本试过地图、object info 和 seed 特判，后面都删掉了；主要优化来自看视频后修“长时间没遇怪”“追怪时转过头”“贴墙不脱身”“弹药低还恋战”“把 pickup 当怪打”这些具体行为。最后保留下来的版本不读 WAD 地图、不读 object 坐标、不做 seed 特判，只靠屏幕 CV 和公开变量。
-
-<video controls src="vizdoom/d3_cv_best_10seed_render_35fps.mp4" width="480"></video>
-
-视频 artifact：[d3_cv_best_10seed_render_35fps.mp4]。
-
-复现入口：[heuristic_vizdoom_d3_cv.py]。
-
-```bash
-python vizdoom/heuristic_vizdoom_d3_cv.py
-```
-
-我本地重跑时是 `mean=557.0`、`min=440.0`，10 个 seed 的奖励是 `[545, 475, 480, 440, 690, 500, 600, 595, 530, 715]`。
-
-要重新生成 35fps 视频：
-
-```bash
-python vizdoom/record_vizdoom_d3_cv.py
-```
-
 #### VizDoom D1 Basic CV 策略
-
-相关 artifact：[heuristic_vizdoom_d1_cv.py]、[d1_cv_10seed_render_35fps.mp4]。
-
-D1 的目标更窄：活着等掉血，然后在血包有正 reward 时吃掉它。迭代时我先用更强的 object/info 版本验证了这个行为上限，10 seeds 可以接近 `1.01`；但这个版本依赖不可复现的信息暴露，所以最后删掉，只保留 pip EnvPool、`render()` 屏幕像素和公开的 `HEALTH`。纯 CV 版用亮度阈值、形态学 close/dilate 和连通域找 medikit，用 bbox 中心决定左转/右转/前进；当血量还高且血包已经很近时，它会原地 staging，等血掉到阈值附近再走进去。
-
-这一轮主要是在失败视频里调两个东西：`PICKUP_HEALTH` 决定什么时候吃，`STAGE_AREA`/bbox 大小决定离血包多近开始等。太早冲会浪费 reward，太晚等会卡墙或死亡；最后的纯 EnvPool CV 版本比 info 上限低一些，但复现干净，10 seeds 是 `mean=0.9441`、`min=0.2900`。
-
-<video controls src="vizdoom/d1_cv_10seed_render_35fps.mp4" width="480"></video>
-
-视频 artifact：[d1_cv_10seed_render_35fps.mp4]。
 
 复现入口：[heuristic_vizdoom_d1_cv.py]。
 
@@ -706,6 +686,22 @@ python vizdoom/heuristic_vizdoom_d1_cv.py \
   --episodes 10 \
   --seed 0 \
   --record-mp4 vizdoom/d1_cv_10seed_render_35fps.mp4
+```
+
+#### VizDoom D3 Battle CV 策略
+
+复现入口：[heuristic_vizdoom_d3_cv.py]、[record_vizdoom_d3_cv.py]。
+
+```bash
+python vizdoom/heuristic_vizdoom_d3_cv.py
+```
+
+我本地重跑时是 `mean=557.0`、`min=440.0`，10 个 seed 的奖励是 `[545, 475, 480, 440, 690, 500, 600, 595, 530, 715]`。
+
+要重新生成 35fps 视频：
+
+```bash
+python vizdoom/record_vizdoom_d3_cv.py
 ```
 
 #### Montezuma 400 分回放

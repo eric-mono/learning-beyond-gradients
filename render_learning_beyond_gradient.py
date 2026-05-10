@@ -129,7 +129,7 @@ body {
   color: var(--active-ink);
 }
 .lang-pane[hidden] { display: none !important; }
-h1, h2, h3 {
+h1, h2, h3, h4 {
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   line-height: 1.18;
   letter-spacing: 0;
@@ -137,7 +137,21 @@ h1, h2, h3 {
 h1 { margin: 0 0 28px; font-size: 46px; max-width: 860px; }
 h2 { margin: 56px 0 18px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 30px; }
 h3 { margin: 34px 0 12px; font-size: 22px; }
-h2, h3 { scroll-margin-top: 78px; }
+h4 { margin: 28px 0 10px; font-size: 19px; }
+h2, h3, h4 { scroll-margin-top: 78px; }
+.section-link {
+  margin-right: 0.35em;
+  color: var(--muted);
+  font-size: 0.82em;
+  font-weight: 700;
+  text-decoration: none;
+  opacity: 0.72;
+}
+.section-link:hover {
+  color: var(--accent);
+  opacity: 1;
+  text-decoration: underline;
+}
 p { margin: 18px 0; }
 a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 ul, ol { padding-left: 1.45em; }
@@ -303,12 +317,29 @@ LANG_SCRIPT = """(function () {
 """
 
 
-HEADING_RE = re.compile(r"<h([23])>(.*?)</h\1>")
+HEADING_RE = re.compile(r"<h([234])>(.*?)</h\1>")
 TAG_RE = re.compile(r"<[^>]+>")
+ASCII_WORD_RE = re.compile(r"[A-Za-z0-9]+")
+CJK_SLUG_HINTS = (
+    ("中间节点", "intermediate-nodes"),
+    ("默认", "default"),
+    ("策略", "policy"),
+    ("分回放", "point-replay"),
+)
 
 
 def heading_text(fragment: str) -> str:
     return unescape(TAG_RE.sub("", fragment)).strip()
+
+
+def unique_id(base: str, used: set[str]) -> str:
+    candidate = base
+    suffix = 2
+    while candidate in used:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    used.add(candidate)
+    return candidate
 
 
 def heading_id(text: str, lang: str, index: int, used: set[str]) -> str:
@@ -326,26 +357,46 @@ def heading_id(text: str, lang: str, index: int, used: set[str]) -> str:
     else:
         base = f"{lang}-section-{index}"
 
-    candidate = base
-    suffix = 2
-    while candidate in used:
-        candidate = f"{base}-{suffix}"
-        suffix += 1
-    used.add(candidate)
-    return candidate
+    return unique_id(base, used)
+
+
+def subsection_id(text: str, lang: str, index: int, used: set[str]) -> str:
+    tokens = [match.group(0).lower() for match in ASCII_WORD_RE.finditer(text)]
+    for phrase, replacement in CJK_SLUG_HINTS:
+        if phrase in text:
+            tokens.extend(replacement.split("-"))
+    base = f"{lang}-{'-'.join(tokens)}" if tokens else f"{lang}-subsection-{index}"
+    return unique_id(base, used)
+
+
+def heading_with_link(level: int, inner: str, text: str, anchor: str) -> str:
+    label = escape(f"Link to {text}", quote=True)
+    return (
+        f'<h{level} id="{anchor}">'
+        f'<a class="section-link" href="#{anchor}" aria-label="{label}">#</a>'
+        f"{inner}"
+        f"</h{level}>"
+    )
 
 
 def add_heading_ids(article_html: str, lang: str) -> tuple[str, list[tuple[int, str, str]]]:
     entries: list[tuple[int, str, str]] = []
     used: set[str] = set()
+    subsection_count = 0
 
     def replace(match: re.Match[str]) -> str:
+        nonlocal subsection_count
         level = int(match.group(1))
         inner = match.group(2)
         text = heading_text(inner)
+        if level == 4:
+            subsection_count += 1
+            anchor = subsection_id(text, lang, subsection_count, used)
+            return heading_with_link(level, inner, text, anchor)
+
         anchor = heading_id(text, lang, len(entries) + 1, used)
         entries.append((level, text, anchor))
-        return f'<h{level} id="{anchor}">{inner}</h{level}>'
+        return heading_with_link(level, inner, text, anchor)
 
     return HEADING_RE.sub(replace, article_html), entries
 
