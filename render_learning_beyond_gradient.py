@@ -600,14 +600,12 @@ COMMENTS_SCRIPT = """(function () {
 
   function issueBody(issue) {
     const body = (issue.body || '').trim();
-    if (!body) return '';
-    return body.length > 900 ? `${body.slice(0, 900).trim()}...` : body;
+    return body;
   }
 
   function threadBody(comment) {
     const body = (comment.body || '').trim();
-    if (!body) return '';
-    return body.length > 700 ? `${body.slice(0, 700).trim()}...` : body;
+    return body;
   }
 
   function countLabel(count, lang) {
